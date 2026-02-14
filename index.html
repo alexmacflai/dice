@@ -2,12 +2,26 @@
 <html lang="en">
   <head>
     <meta charset="UTF-8" />
-    <link rel="icon" type="image/svg+xml" href="/vite.svg" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>dice</title>
   </head>
   <body>
     <div id="app"></div>
+
+    <div id="hud" aria-label="controls">
+      <div class="hud-bar">
+        <div class="hud-pill" role="group" aria-label="rotation mode">
+          <button id="mode-order" class="hud-btn is-active" type="button" aria-pressed="true">order</button>
+          <button id="mode-chaos" class="hud-btn" type="button" aria-pressed="false">chaos</button>
+        </div>
+
+        <div class="hud-pill" role="group" aria-label="line mode">
+          <button id="lines-on" class="hud-btn is-active" type="button" aria-pressed="true">lines</button>
+          <button id="lines-off" class="hud-btn" type="button" aria-pressed="false">no lines</button>
+        </div>
+      </div>
+    </div>
+
     <script type="module" src="/src/main.ts"></script>
   </body>
 </html>
