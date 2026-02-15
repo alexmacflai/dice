@@ -84,7 +84,8 @@ export function createDie(size = 1.5, lineWidthPx = 1): THREE.Group {
       linewidth: band.widthPx,
       transparent: true,
       opacity: 0,
-      depthTest: false,
+      // Important: keep glow only on visible geometry; hidden edges should not glow through.
+      depthTest: true,
       depthWrite: false,
       blending: THREE.AdditiveBlending,
     });

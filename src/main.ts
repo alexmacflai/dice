@@ -41,32 +41,71 @@ ensureHud();
 
 // Renderer
 const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
+
+// ==== Quick Tuning Controls (keep these near the top) ====
+// Rendering
 const MAX_PIXEL_RATIO = 1.35;
 const BASE_DIE_COLOR = 0xfff6ff;
 const HIGHLIGHT_COLOR = 0xffffff;
+
+// Grid layout
+const GRID_DIE_SIZE = 1;
+const GRID_COLS = 32;
+const GRID_ROWS = 12;
+const GRID_GAP = 0.8; // space between dice
+const GRID_CAMERA_MARGIN_MULT = 1; // extra framing margin around grid
+
+// Wave/ripple timing
+const RIPPLE_DELAY_PER_STEP_MS = 150;
+
+// Rotation timing (independent for each mode)
+const ORDER_MS_PER_90 = 120;
+const CHAOS_MS_PER_90 = 120;
+
+// Rotation transition/easing for each mode
+const ORDER_ROTATION_EASING_FN = (t: number) => {
+  const kick = 0.12;
+  if (t <= kick) {
+    const a = t / kick;
+    return kick * a * a;
+  }
+  const u = (t - kick) / (1 - kick);
+  return kick + (1 - kick) * (1 - Math.pow(1 - u, 3));
+};
+const CHAOS_ROTATION_EASING_FN = ORDER_ROTATION_EASING_FN;
+const ORDER_TURNS90_MIN = 2;
+const ORDER_TURNS90_MAX = 6;
+const CHAOS_FULL_TURNS = 1;
+const CHAOS_EXTRA_90_MIN = 0;
+const CHAOS_EXTRA_90_MAX = 4;
+
 // Hover scale tuning:
 // Change this value to increase/decrease max hover size (1.10 = 110%).
-const HOVER_MAX_SCALE = 1.5;
+const HOVER_MAX_SCALE = 1.4;
 // Change this value to increase/decrease how far the hover influence reaches (in dice-grid steps).
-const HOVER_FALLOFF_DISTANCE_STEPS = 6;
+const HOVER_FALLOFF_DISTANCE_STEPS = 4;
 // Change this value to increase/decrease how much nearby dice scale down with distance.
 const HOVER_FALLOFF_POWER = 2;
 // Change this value to control hover response smoothness.
 // Smaller = snappier response, larger = softer/slower follow.
-const HOVER_RESPONSE_MS = 40;
+const HOVER_RESPONSE_MS = 24;
 // Change this value to increase/decrease hover glow visibility.
-const HOVER_GLOW_MAX_OPACITY = .35;
+const HOVER_GLOW_MAX_OPACITY = .55;
 // Change this value to control hovered-die glow spread.
 // 0.5 means hovered spread is half of base spread (divide by 2).
-const HOVER_GLOW_SPREAD_MULT_AT_PEAK = .5;
+const HOVER_GLOW_SPREAD_MULT_AT_PEAK = 0.5;
 // Change this value to control glow fade in/out speed.
 // Smaller = faster glow transitions, larger = slower/smoother transitions.
 const HOVER_GLOW_RESPONSE_MS = 32;
 // Change this value to increase/decrease how much dice shrink while spinning (0.8 = 80% at deepest point).
-const SPIN_MIN_SCALE = 0.4;
+const SPIN_MIN_SCALE = 0.24;
 // Change this value to choose when (during spin progress) the minimum scale is reached.
 // Example: 0.2 means the smallest scale happens at 20% of the rotation duration.
-const SPIN_MIN_SCALE_PROGRESS = 0.25;
+const SPIN_MIN_SCALE_PROGRESS = 0.2;
+
+// Order mode only: smooth correction when resting orientation is close-but-not-exact 90° grid.
+const ORDER_SNAP_TRANSITION_MS = 120;
+const ORDER_SNAP_MIN_ANGLE_RAD = THREE.MathUtils.degToRad(0.02);
 const getRenderPixelRatio = () => Math.min(window.devicePixelRatio, MAX_PIXEL_RATIO);
 renderer.setPixelRatio(getRenderPixelRatio());
 renderer.setSize(app.clientWidth, app.clientHeight);
@@ -85,10 +124,10 @@ camera.lookAt(0, 0, 0);
 // Dice grid (fixed for now)
 const dice: Die[] = [];
 const diceById = new Map<string, Die>();
-const dieSize = 1;
-const cols = 32;
-const rows = 16;
-const gap = .8; // space between dice
+const dieSize = GRID_DIE_SIZE;
+const cols = GRID_COLS;
+const rows = GRID_ROWS;
+const gap = GRID_GAP;
 
 const step = dieSize + gap;
 const gridW = (cols - 1) * step;
@@ -100,7 +139,7 @@ function updateOrthoCamera(w: number, h: number) {
   const aspect = w / h;
 
   // Fit the grid height plus a margin so nothing clips.
-  const margin = dieSize * 1.6;
+  const margin = dieSize * GRID_CAMERA_MARGIN_MULT;
   const viewH = gridH + margin * 2;
   const viewW = viewH * aspect;
 
@@ -124,6 +163,7 @@ const hoverPointWorld = new THREE.Vector3();
 let primaryHoveredDieId: string | null = null;
 
 // Removed ISO_BASE_EULER and ISO_BASE_QUAT per instructions
+type RotationMode = "order" | "chaos";
 
 type Trigger = {
   timeMs: number;
@@ -131,6 +171,7 @@ type Trigger = {
   angleRad: number;
   durationMs: number;
   snapAtEnd: boolean; // true for order
+  easingMode: RotationMode;
 };
 
 type SpinEvent = {
@@ -141,6 +182,7 @@ type SpinEvent = {
   startTimeMs: number;
   lastEased: number;
   snapAtEnd: boolean;
+  easingMode: RotationMode;
 };
 
 type DieAnimState = {
@@ -151,6 +193,10 @@ type DieAnimState = {
   hoverToScale: number;
   hoverGlowLineMats: any[];
   hoverGlowCurrentIntensity: number;
+  orderSnapActive: boolean;
+  orderSnapFrom: THREE.Quaternion;
+  orderSnapTo: THREE.Quaternion;
+  orderSnapStartTimeMs: number;
 };
 
 // Raycasting: click/tap a die
@@ -158,12 +204,9 @@ const raycaster = new THREE.Raycaster();
 
 const animById = new Map<string, DieAnimState>();
 
-// Milliseconds per 90° step. Total duration scales with steps.
-const MS_PER_90 = 120;
-
-function durationForAngleMs(angleRad: number) {
+function durationForAngleMs(angleRad: number, msPer90: number) {
   const steps = Math.max(1, Math.round(Math.abs(angleRad) / (Math.PI / 2)));
-  return steps * MS_PER_90;
+  return steps * msPer90;
 }
 
 function ensureAnimState(d: Die): DieAnimState {
@@ -178,6 +221,10 @@ function ensureAnimState(d: Die): DieAnimState {
     hoverToScale: 1,
     hoverGlowLineMats: [],
     hoverGlowCurrentIntensity: 0,
+    orderSnapActive: false,
+    orderSnapFrom: new THREE.Quaternion(),
+    orderSnapTo: new THREE.Quaternion(),
+    orderSnapStartTimeMs: 0,
   };
   d.group.traverse((obj) => {
     if (!obj.userData.isHoverGlow) return;
@@ -264,16 +311,10 @@ function snapQuatToOrtho90(q: THREE.Quaternion) {
   return q;
 }
 
-const easeFastAccelSlowDecel = (t: number) => {
-  // Fast acceleration, slow deceleration
-  const kick = 0.12;
-  if (t <= kick) {
-    const a = t / kick;
-    return kick * a * a;
-  }
-  const u = (t - kick) / (1 - kick);
-  return kick + (1 - kick) * (1 - Math.pow(1 - u, 3));
-};
+function quatAngleRad(a: THREE.Quaternion, b: THREE.Quaternion) {
+  const dot = Math.min(1, Math.max(-1, Math.abs(a.dot(b))));
+  return 2 * Math.acos(dot);
+}
 
 function randomInt(min: number, max: number) {
   return Math.floor(Math.random() * (max - min + 1)) + min;
@@ -318,13 +359,11 @@ function scheduleWaveRoll(clicked: Die) {
   const now = performance.now();
 
   // Ripple effect
-  const delayPerStepMs = 140;
-
   for (const d of dice) {
     const dr = d.row - clicked.row;
     const dc = d.col - clicked.col;
     const distSteps = Math.sqrt(dr * dr + dc * dc);
-    const startTime = now + distSteps * delayPerStepMs;
+    const startTime = now + distSteps * RIPPLE_DELAY_PER_STEP_MS;
 
     const st = ensureAnimState(d);
 
@@ -340,18 +379,18 @@ function scheduleWaveRoll(clicked: Die) {
         0
       ).normalize();
 
-      const turns90 = randomInt(2, 5); // 180..450 degrees
+      const turns90 = randomInt(ORDER_TURNS90_MIN, ORDER_TURNS90_MAX); // 180..450 degrees
       angleRad = turns90 * (Math.PI / 2);
-      const durationMs = durationForAngleMs(angleRad);
-      insertTrigger(st, startTime, axisWorld, angleRad, durationMs, true);
+      const durationMs = durationForAngleMs(angleRad, ORDER_MS_PER_90);
+      insertTrigger(st, startTime, axisWorld, angleRad, durationMs, true, "order");
     } else {
       axisWorld = new THREE.Vector3(Math.random(), Math.random(), Math.random()).normalize();
-      const fullTurns = 2;              // full 360° spins
-      const remainderTurns = randomInt(0, 3); // extra 90° chunks
+      const fullTurns = CHAOS_FULL_TURNS; // full 360° spins
+      const remainderTurns = randomInt(CHAOS_EXTRA_90_MIN, CHAOS_EXTRA_90_MAX); // extra 90° chunks
       angleRad = fullTurns * Math.PI * 2 + remainderTurns * (Math.PI / 2);
 
-      const durationMs = durationForAngleMs(angleRad);
-      insertTrigger(st, startTime, axisWorld, angleRad, durationMs, false);
+      const durationMs = durationForAngleMs(angleRad, CHAOS_MS_PER_90);
+      insertTrigger(st, startTime, axisWorld, angleRad, durationMs, false, "chaos");
     }
   }
 }
@@ -362,9 +401,10 @@ function insertTrigger(
   axisWorld: THREE.Vector3,
   angleRad: number,
   durationMs: number,
-  snapAtEnd: boolean
+  snapAtEnd: boolean,
+  easingMode: RotationMode
 ) {
-  st.triggers.push({ timeMs, axisWorld, angleRad, durationMs, snapAtEnd });
+  st.triggers.push({ timeMs, axisWorld, angleRad, durationMs, snapAtEnd, easingMode });
   st.triggers.sort((a, b) => a.timeMs - b.timeMs);
 }
 
@@ -476,7 +516,6 @@ renderer.domElement.addEventListener("pointermove", onPointerMove);
 renderer.domElement.addEventListener("pointerleave", onPointerLeave);
 
 // HUD: rotation mode
-type RotationMode = "order" | "chaos";
 let rotationMode: RotationMode = "order";
 
 const btnOrder = document.querySelector<HTMLButtonElement>("#mode-order");
@@ -582,54 +621,81 @@ function tick() {
         startTimeMs: now,
         lastEased: 0,
         snapAtEnd: trig.snapAtEnd,
+        easingMode: trig.easingMode,
       });
     }
 
+    if ((st.events.length > 0 || st.triggers.length > 0) && st.orderSnapActive) {
+      st.orderSnapActive = false;
+    }
+
     let spinScale = 1;
+    if (st.events.length) {
+      // Stable deterministic order so results are consistent
+      st.events.sort((a, b) => a.id - b.id);
 
-    if (!st.events.length) {
-      d.group.scale.setScalar(st.hoverCurrentScale * spinScale);
-      continue;
-    }
+      // 2) Apply all active events simultaneously (per-frame delta)
+      for (let i = st.events.length - 1; i >= 0; i--) {
+        const ev = st.events[i];
 
-    // Stable deterministic order so results are consistent
-    st.events.sort((a, b) => a.id - b.id);
+        const t = Math.min(1, Math.max(0, (now - ev.startTimeMs) / ev.durationMs));
+        const eased =
+          ev.easingMode === "order"
+            ? ORDER_ROTATION_EASING_FN(t)
+            : CHAOS_ROTATION_EASING_FN(t);
+        // Spin-linked scale pulse: starts at 100%, reaches SPIN_MIN_SCALE at SPIN_MIN_SCALE_PROGRESS,
+        // then recovers to 100% by the end. Duration is tied to rotation via the same event `t`.
+        const peakProgress = THREE.MathUtils.clamp(SPIN_MIN_SCALE_PROGRESS, 0.01, 0.99);
+        const pulse =
+          t <= peakProgress
+            ? t / peakProgress
+            : Math.max(0, 1 - (t - peakProgress) / (1 - peakProgress));
+        const evSpinScale = 1 - (1 - SPIN_MIN_SCALE) * pulse;
+        spinScale = Math.min(spinScale, evSpinScale);
 
-    // 2) Apply all active events simultaneously (per-frame delta)
-    for (let i = st.events.length - 1; i >= 0; i--) {
-      const ev = st.events[i];
+        const deltaE = eased - ev.lastEased;
+        ev.lastEased = eased;
 
-      const t = Math.min(1, Math.max(0, (now - ev.startTimeMs) / ev.durationMs));
-      const eased = easeFastAccelSlowDecel(t);
-      // Spin-linked scale pulse: starts at 100%, reaches SPIN_MIN_SCALE at SPIN_MIN_SCALE_PROGRESS,
-      // then recovers to 100% by the end. Duration is tied to rotation via the same event `t`.
-      const peakProgress = THREE.MathUtils.clamp(SPIN_MIN_SCALE_PROGRESS, 0.01, 0.99);
-      const pulse =
-        t <= peakProgress
-          ? t / peakProgress
-          : Math.max(0, 1 - (t - peakProgress) / (1 - peakProgress));
-      const evSpinScale = 1 - (1 - SPIN_MIN_SCALE) * pulse;
-      spinScale = Math.min(spinScale, evSpinScale);
+        if (Math.abs(deltaE) > 1e-8) {
+          const dAngle = ev.angleRad * deltaE;
+          const dq = new THREE.Quaternion().setFromAxisAngle(ev.axisWorld, dAngle);
+          // WORLD rotation => pre-multiply
+          d.group.quaternion.premultiply(dq);
+        }
 
-      const deltaE = eased - ev.lastEased;
-      ev.lastEased = eased;
-
-      if (Math.abs(deltaE) > 1e-8) {
-        const dAngle = ev.angleRad * deltaE;
-        const dq = new THREE.Quaternion().setFromAxisAngle(ev.axisWorld, dAngle);
-        // WORLD rotation => pre-multiply
-        d.group.quaternion.premultiply(dq);
-      }
-
-      if (t === 1) {
-        if (ev.snapAtEnd) snapQuatToOrtho90(d.group.quaternion);
-        st.events.splice(i, 1);
+        if (t === 1) {
+          st.events.splice(i, 1);
+        }
       }
     }
 
-    // When fully at rest in ORDER mode, enforce perfect cube alignment.
-    if (rotationMode === "order" && st.events.length === 0) {
-      snapQuatToOrtho90(d.group.quaternion);
+    // Only snap when fully idle (no active events AND no pending triggers),
+    // otherwise ripple queues can cause visible correction/cancel jumps.
+    if (rotationMode === "order" && st.events.length === 0 && st.triggers.length === 0) {
+      if (!st.orderSnapActive) {
+        st.orderSnapFrom.copy(d.group.quaternion);
+        st.orderSnapTo.copy(d.group.quaternion);
+        snapQuatToOrtho90(st.orderSnapTo);
+        const delta = quatAngleRad(st.orderSnapFrom, st.orderSnapTo);
+        if (delta > ORDER_SNAP_MIN_ANGLE_RAD) {
+          st.orderSnapActive = true;
+          st.orderSnapStartTimeMs = now;
+        } else {
+          d.group.quaternion.copy(st.orderSnapTo);
+        }
+      }
+
+      if (st.orderSnapActive) {
+        const tSnap = Math.min(1, Math.max(0, (now - st.orderSnapStartTimeMs) / ORDER_SNAP_TRANSITION_MS));
+        const easedSnap = 1 - Math.pow(1 - tSnap, 3);
+        d.group.quaternion.copy(st.orderSnapFrom).slerp(st.orderSnapTo, easedSnap);
+        if (tSnap === 1) {
+          st.orderSnapActive = false;
+          d.group.quaternion.copy(st.orderSnapTo);
+        }
+      }
+    } else {
+      st.orderSnapActive = false;
     }
 
     // Hover and spin scales are additive by composition (multiplied), so neither cancels the other.
