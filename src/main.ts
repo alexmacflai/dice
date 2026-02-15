@@ -47,6 +47,7 @@ const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
 const MAX_PIXEL_RATIO = 1.35;
 const BASE_DIE_COLOR = 0xfff6ff;
 const HIGHLIGHT_COLOR = 0xffffff;
+const BLUR_LAYER_PX = 8;
 
 // Grid layout
 const GRID_DIE_SIZE = 1;
@@ -88,15 +89,7 @@ const HOVER_FALLOFF_DISTANCE_STEPS = 4;
 const HOVER_FALLOFF_POWER = 2;
 // Change this value to control hover response smoothness.
 // Smaller = snappier response, larger = softer/slower follow.
-const HOVER_RESPONSE_MS = 24;
-// Change this value to increase/decrease hover glow visibility.
-const HOVER_GLOW_MAX_OPACITY = .55;
-// Change this value to control hovered-die glow spread.
-// 0.5 means hovered spread is half of base spread (divide by 2).
-const HOVER_GLOW_SPREAD_MULT_AT_PEAK = 0.5;
-// Change this value to control glow fade in/out speed.
-// Smaller = faster glow transitions, larger = slower/smoother transitions.
-const HOVER_GLOW_RESPONSE_MS = 32;
+const HOVER_RESPONSE_MS = 50;
 // Change this value to increase/decrease how much dice shrink while spinning (0.8 = 80% at deepest point).
 const SPIN_MIN_SCALE = 0.24;
 // Change this value to choose when (during spin progress) the minimum scale is reached.
@@ -107,14 +100,28 @@ const SPIN_MIN_SCALE_PROGRESS = 0.2;
 const ORDER_SNAP_TRANSITION_MS = 120;
 const ORDER_SNAP_MIN_ANGLE_RAD = THREE.MathUtils.degToRad(0.02);
 const getRenderPixelRatio = () => Math.min(window.devicePixelRatio, MAX_PIXEL_RATIO);
+
+const blurRenderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
+blurRenderer.domElement.classList.add("blur-layer");
+blurRenderer.domElement.style.pointerEvents = "none";
+renderer.domElement.classList.add("main-layer");
 renderer.setPixelRatio(getRenderPixelRatio());
 renderer.setSize(app.clientWidth, app.clientHeight);
 renderer.setClearColor(0x000000, 0);
+blurRenderer.setPixelRatio(getRenderPixelRatio());
+blurRenderer.setSize(app.clientWidth, app.clientHeight);
+blurRenderer.setClearColor(0x000000, 0);
+blurRenderer.domElement.style.filter = "blur(0px)";
+blurRenderer.domElement.style.opacity = "0";
+blurRenderer.domElement.style.mixBlendMode = "screen";
+app.appendChild(blurRenderer.domElement);
 app.appendChild(renderer.domElement);
 
 // Scene
 const scene = new THREE.Scene();
 scene.background = null;
+const blurScene = new THREE.Scene();
+blurScene.background = null;
 
 // Camera (orthographic = truly isometric, no perspective distortion)
 const camera = new THREE.OrthographicCamera(-1, 1, 1, -1, 0.01, 100);
@@ -156,11 +163,18 @@ updateOrthoCamera(app.clientWidth, app.clientHeight);
 const gridGroup = new THREE.Group();
 gridGroup.rotation.set(0, 0, 0); // no tilt, fully frontal
 scene.add(gridGroup);
+const blurGridGroup = new THREE.Group();
+blurGridGroup.rotation.set(0, 0, 0);
+blurScene.add(blurGridGroup);
 
 const pointer = new THREE.Vector2();
 const hoverPlane = new THREE.Plane(new THREE.Vector3(0, 0, 1), 0);
 const hoverPointWorld = new THREE.Vector3();
 let primaryHoveredDieId: string | null = null;
+let blurActiveDieId: string | null = null;
+let blurPendingDieId: string | null = null;
+let blurCurrentPx = 0;
+let blurTargetPx = 0;
 
 // Removed ISO_BASE_EULER and ISO_BASE_QUAT per instructions
 type RotationMode = "order" | "chaos";
@@ -191,8 +205,6 @@ type DieAnimState = {
   events: SpinEvent[];
   hoverCurrentScale: number;
   hoverToScale: number;
-  hoverGlowLineMats: any[];
-  hoverGlowCurrentIntensity: number;
   orderSnapActive: boolean;
   orderSnapFrom: THREE.Quaternion;
   orderSnapTo: THREE.Quaternion;
@@ -203,6 +215,7 @@ type DieAnimState = {
 const raycaster = new THREE.Raycaster();
 
 const animById = new Map<string, DieAnimState>();
+const blurGroupById = new Map<string, THREE.Group>();
 
 function durationForAngleMs(angleRad: number, msPer90: number) {
   const steps = Math.max(1, Math.round(Math.abs(angleRad) / (Math.PI / 2)));
@@ -219,21 +232,11 @@ function ensureAnimState(d: Die): DieAnimState {
     events: [],
     hoverCurrentScale: 1,
     hoverToScale: 1,
-    hoverGlowLineMats: [],
-    hoverGlowCurrentIntensity: 0,
     orderSnapActive: false,
     orderSnapFrom: new THREE.Quaternion(),
     orderSnapTo: new THREE.Quaternion(),
     orderSnapStartTimeMs: 0,
   };
-  d.group.traverse((obj) => {
-    if (!obj.userData.isHoverGlow) return;
-    const mat: any = (obj as any).material;
-    if (mat && typeof mat.linewidth === "number") {
-      st.hoverGlowLineMats.push(mat);
-      return;
-    }
-  });
   animById.set(d.id, st);
   return st;
 }
@@ -325,10 +328,13 @@ let nextEventId = 1;
 for (let r = 0; r < rows; r++) {
   for (let c = 0; c < cols; c++) {
     const group = createDie(dieSize);
+    const blurGroup = createDie(dieSize);
     group.position.set(startX + c * step, startY - r * step, 0);
+    blurGroup.position.copy(group.position);
 
     // Rest: one face toward the camera (flat square look)
     group.rotation.set(0, 0, 0);
+    blurGroup.rotation.copy(group.rotation);
 
     // Tag all children so raycasting can recover the parent die group
     group.traverse((obj) => {
@@ -336,9 +342,12 @@ for (let r = 0; r < rows; r++) {
     });
 
     gridGroup.add(group);
+    blurGridGroup.add(blurGroup);
+    blurGroup.visible = false;
     const dieObj: Die = { id: `${r}-${c}`, group, row: r, col: c };
     dice.push(dieObj);
     diceById.set(dieObj.id, dieObj);
+    blurGroupById.set(dieObj.id, blurGroup);
     ensureAnimState(dieObj);
   }
 }
@@ -346,6 +355,13 @@ for (let r = 0; r < rows; r++) {
 function syncLineMaterialResolution(width: number, height: number) {
   for (const d of dice) {
     d.group.traverse((obj) => {
+      const mat: any = (obj as any).material;
+      if (!mat || typeof mat.linewidth !== "number" || !mat.resolution) return;
+      mat.resolution.set(width, height);
+    });
+  }
+  for (const blurGroup of blurGroupById.values()) {
+    blurGroup.traverse((obj) => {
       const mat: any = (obj as any).material;
       if (!mat || typeof mat.linewidth !== "number" || !mat.resolution) return;
       mat.resolution.set(width, height);
@@ -443,13 +459,37 @@ function applyHoverTargets(pointerWorld: THREE.Vector3 | null) {
       primaryHoveredDieId = d.id;
     }
   }
+
+  if (!primaryHoveredDieId) {
+    blurPendingDieId = null;
+    blurTargetPx = 0;
+    return;
+  }
+
+  if (blurActiveDieId === null) {
+    // No active blur yet: assign immediately then fade in.
+    blurActiveDieId = primaryHoveredDieId;
+    blurPendingDieId = null;
+    blurTargetPx = BLUR_LAYER_PX;
+    return;
+  }
+
+  if (blurActiveDieId === primaryHoveredDieId) {
+    // Same die: keep fading/holding in.
+    blurPendingDieId = null;
+    blurTargetPx = BLUR_LAYER_PX;
+    return;
+  }
+
+  // Different hovered die: fade out old one first, then switch/fade in in tick().
+  blurPendingDieId = primaryHoveredDieId;
+  blurTargetPx = 0;
 }
 
 function setHighlight(dieId: string | null) {
   for (const d of dice) {
     const isSelected = dieId === d.id;
     d.group.traverse((obj) => {
-      if (obj.userData.isHoverGlow) return;
       // Only affects materials that have a `color` (lines + pips)
       const mat = (obj as any).material;
       if (!mat || !mat.color) return;
@@ -544,8 +584,8 @@ btnOrder?.addEventListener("click", () => setMode("order"));
 btnChaos?.addEventListener("click", () => setMode("chaos"));
 
 function setLines(enabled: boolean) {
-  for (const d of dice) {
-    d.group.traverse((obj) => {
+  const apply = (group: THREE.Group) => {
+    group.traverse((obj) => {
       const mat: any = (obj as any).material;
       if (!mat || typeof mat.linewidth !== "number") return;
 
@@ -564,7 +604,9 @@ function setLines(enabled: boolean) {
 
       mat.needsUpdate = true;
     });
-  }
+  };
+  for (const d of dice) apply(d.group);
+  for (const blurGroup of blurGroupById.values()) apply(blurGroup);
 }
 
 btnLinesOn?.addEventListener("click", () => {
@@ -586,29 +628,10 @@ function tick() {
   const dtMs = now - lastTickMs;
   lastTickMs = now;
   const hoverBlend = 1 - Math.exp(-dtMs / Math.max(1, HOVER_RESPONSE_MS));
-  const glowBlend = 1 - Math.exp(-dtMs / Math.max(1, HOVER_GLOW_RESPONSE_MS));
 
   for (const d of dice) {
     const st = ensureAnimState(d);
     st.hoverCurrentScale = THREE.MathUtils.lerp(st.hoverCurrentScale, st.hoverToScale, hoverBlend);
-    const hoverIntensity = THREE.MathUtils.clamp((st.hoverCurrentScale - 1) / Math.max(1e-6, HOVER_MAX_SCALE - 1), 0, 1);
-    const isPrimaryHovered = d.id === primaryHoveredDieId;
-    const glowTargetIntensity = isPrimaryHovered ? hoverIntensity : 0;
-    st.hoverGlowCurrentIntensity = THREE.MathUtils.lerp(
-      st.hoverGlowCurrentIntensity,
-      glowTargetIntensity,
-      glowBlend
-    );
-
-    const glowOpacity = st.hoverGlowCurrentIntensity * HOVER_GLOW_MAX_OPACITY;
-    const glowSpreadMult = THREE.MathUtils.lerp(1, HOVER_GLOW_SPREAD_MULT_AT_PEAK, st.hoverGlowCurrentIntensity);
-    for (const glowLineMat of st.hoverGlowLineMats) {
-      const baseOpacity = Number(glowLineMat.userData?.baseGlowOpacity ?? 0.15);
-      glowLineMat.opacity = glowOpacity * baseOpacity;
-      const baseWidth = Number(glowLineMat.userData?.baseGlowLineWidthPx ?? glowLineMat.linewidth);
-      glowLineMat.linewidth = baseWidth * glowSpreadMult;
-      glowLineMat.needsUpdate = true;
-    }
 
     // 1) Convert due triggers into spin events (additive, no cancel, no queue)
     while (st.triggers.length && st.triggers[0].timeMs <= now) {
@@ -700,8 +723,41 @@ function tick() {
 
     // Hover and spin scales are additive by composition (multiplied), so neither cancels the other.
     d.group.scale.setScalar(st.hoverCurrentScale * spinScale);
+
+    const blurGroup = blurGroupById.get(d.id);
+    if (blurGroup) {
+      blurGroup.visible = d.id === blurActiveDieId;
+      blurGroup.quaternion.copy(d.group.quaternion);
+      blurGroup.scale.copy(d.group.scale);
+    }
   }
 
+  // Blur uses a linear transition (constant px/ms), independent from hover scale easing.
+  const blurSpeedPxPerMs = BLUR_LAYER_PX / Math.max(1, HOVER_RESPONSE_MS);
+  const blurMaxStep = blurSpeedPxPerMs * dtMs;
+  const blurDelta = blurTargetPx - blurCurrentPx;
+  if (Math.abs(blurDelta) <= blurMaxStep) {
+    blurCurrentPx = blurTargetPx;
+  } else {
+    blurCurrentPx += Math.sign(blurDelta) * blurMaxStep;
+  }
+  const blurNorm = BLUR_LAYER_PX > 0 ? THREE.MathUtils.clamp(blurCurrentPx / BLUR_LAYER_PX, 0, 1) : 0;
+  blurRenderer.domElement.style.filter = `blur(${blurCurrentPx.toFixed(3)}px)`;
+  // Fade opacity with blur amount so it doesn't pop in as a sharp duplicate before blur ramps up.
+  blurRenderer.domElement.style.opacity = blurNorm.toFixed(3);
+
+  // Complete handoff after fully faded out: switch blurred die, then fade back in.
+  if (blurPendingDieId && blurCurrentPx < 0.05) {
+    blurActiveDieId = blurPendingDieId;
+    blurPendingDieId = null;
+    blurTargetPx = BLUR_LAYER_PX;
+  }
+
+  if (!primaryHoveredDieId && blurCurrentPx < 0.05) {
+    blurActiveDieId = null;
+  }
+
+  blurRenderer.render(blurScene, camera);
   renderer.render(scene, camera);
   requestAnimationFrame(tick);
 }
@@ -715,6 +771,8 @@ window.addEventListener("resize", () => {
 
   renderer.setPixelRatio(getRenderPixelRatio());
   renderer.setSize(w, h);
+  blurRenderer.setPixelRatio(getRenderPixelRatio());
+  blurRenderer.setSize(w, h);
 
   updateOrthoCamera(w, h);
 
