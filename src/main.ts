@@ -40,14 +40,19 @@ function ensureHud() {
 ensureHud();
 
 // Renderer
-const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: false });
-renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
+const MAX_PIXEL_RATIO = 1.35;
+const BASE_DIE_COLOR = 0xfff6ff;
+const HIGHLIGHT_COLOR = 0xffffff;
+const getRenderPixelRatio = () => Math.min(window.devicePixelRatio, MAX_PIXEL_RATIO);
+renderer.setPixelRatio(getRenderPixelRatio());
 renderer.setSize(app.clientWidth, app.clientHeight);
+renderer.setClearColor(0x000000, 0);
 app.appendChild(renderer.domElement);
 
 // Scene
 const scene = new THREE.Scene();
-scene.background = new THREE.Color(0x000000);
+scene.background = null;
 
 // Camera (orthographic = truly isometric, no perspective distortion)
 const camera = new THREE.OrthographicCamera(-1, 1, 1, -1, 0.01, 100);
@@ -255,6 +260,18 @@ for (let r = 0; r < rows; r++) {
   }
 }
 
+function syncLineMaterialResolution(width: number, height: number) {
+  for (const d of dice) {
+    d.group.traverse((obj) => {
+      const mat: any = (obj as any).material;
+      if (!mat || typeof mat.linewidth !== "number" || !mat.resolution) return;
+      mat.resolution.set(width, height);
+    });
+  }
+}
+
+syncLineMaterialResolution(app.clientWidth, app.clientHeight);
+
 function scheduleWaveRoll(clicked: Die) {
   const now = performance.now();
 
@@ -321,7 +338,7 @@ function setHighlight(dieId: string | null) {
         (obj as any).material = mat.clone();
         obj.userData.__matCloned = true;
       }
-      ((obj as any).material as any).color.set(isSelected ? 0xffffff : 0xff2a2a);
+      ((obj as any).material as any).color.set(isSelected ? HIGHLIGHT_COLOR : BASE_DIE_COLOR);
     });
   }
 }
@@ -488,11 +505,13 @@ window.addEventListener("resize", () => {
   const w = app.clientWidth;
   const h = app.clientHeight;
 
-  renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+  renderer.setPixelRatio(getRenderPixelRatio());
   renderer.setSize(w, h);
 
   updateOrthoCamera(w, h);
 
   renderer.domElement.style.width = "100%";
   renderer.domElement.style.height = "100%";
+
+  syncLineMaterialResolution(w, h);
 });

@@ -10,7 +10,7 @@ export type Die = {
   col: number;
 };
 
-export function createDie(size = 1.5, lineWidthPx = 2): THREE.Group {
+export function createDie(size = 1.5, lineWidthPx = 1): THREE.Group {
   const die = new THREE.Group();
 
   const boxGeo = new THREE.BoxGeometry(size, size, size);
@@ -55,7 +55,7 @@ export function createDie(size = 1.5, lineWidthPx = 2): THREE.Group {
   lineGeom.setPositions(deduped);
 
   const lineMat = new LineMaterial({
-    color: 0xff2a2a,
+    color: 0xfff6ff,
     linewidth: lineWidthPx, // in pixels
     depthTest: true,
     depthWrite: false,
@@ -87,12 +87,12 @@ export function createDie(size = 1.5, lineWidthPx = 2): THREE.Group {
 
   // Pips
   const pipMat = new THREE.MeshBasicMaterial({
-    color: 0xff2a2a,
+    color: 0xfff6ff,
     depthTest: true,
     depthWrite: false, // prevent z-fighting with the occluder
   });
-  const pipRadius = size * 0.08; // scales with die size
-  const pipGeo = new THREE.CircleGeometry(pipRadius, 24);
+  const pipRadius = size * 0.064; // scales with die size
+  const pipGeo = new THREE.CircleGeometry(pipRadius, 14);
 
   // Pip layout (all derived from `size`)
   const pipLift = size * 0.01; // Tune: lift pips slightly above die faces to prevent z-fighting. --- IGNORE ---
@@ -129,7 +129,7 @@ export function createDie(size = 1.5, lineWidthPx = 2): THREE.Group {
     const pip = new THREE.Mesh(pipGeo, pipMat);
     pip.position.set(x, y, z);
     pip.quaternion.copy(faceQuat(face));
-    pip.renderOrder = 0;
+    pip.renderOrder = 1;
     die.add(pip);
   };
 
