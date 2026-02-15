@@ -44,6 +44,29 @@ const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
 const MAX_PIXEL_RATIO = 1.35;
 const BASE_DIE_COLOR = 0xfff6ff;
 const HIGHLIGHT_COLOR = 0xffffff;
+// Hover scale tuning:
+// Change this value to increase/decrease max hover size (1.10 = 110%).
+const HOVER_MAX_SCALE = 1.5;
+// Change this value to increase/decrease how far the hover influence reaches (in dice-grid steps).
+const HOVER_FALLOFF_DISTANCE_STEPS = 6;
+// Change this value to increase/decrease how much nearby dice scale down with distance.
+const HOVER_FALLOFF_POWER = 2;
+// Change this value to control hover response smoothness.
+// Smaller = snappier response, larger = softer/slower follow.
+const HOVER_RESPONSE_MS = 40;
+// Change this value to increase/decrease hover glow visibility.
+const HOVER_GLOW_MAX_OPACITY = .35;
+// Change this value to control hovered-die glow spread.
+// 0.5 means hovered spread is half of base spread (divide by 2).
+const HOVER_GLOW_SPREAD_MULT_AT_PEAK = .5;
+// Change this value to control glow fade in/out speed.
+// Smaller = faster glow transitions, larger = slower/smoother transitions.
+const HOVER_GLOW_RESPONSE_MS = 32;
+// Change this value to increase/decrease how much dice shrink while spinning (0.8 = 80% at deepest point).
+const SPIN_MIN_SCALE = 0.4;
+// Change this value to choose when (during spin progress) the minimum scale is reached.
+// Example: 0.2 means the smallest scale happens at 20% of the rotation duration.
+const SPIN_MIN_SCALE_PROGRESS = 0.25;
 const getRenderPixelRatio = () => Math.min(window.devicePixelRatio, MAX_PIXEL_RATIO);
 renderer.setPixelRatio(getRenderPixelRatio());
 renderer.setSize(app.clientWidth, app.clientHeight);
@@ -63,9 +86,9 @@ camera.lookAt(0, 0, 0);
 const dice: Die[] = [];
 const diceById = new Map<string, Die>();
 const dieSize = 1;
-const cols = 24;
-const rows = 12;
-const gap = 1; // space between dice
+const cols = 32;
+const rows = 16;
+const gap = .8; // space between dice
 
 const step = dieSize + gap;
 const gridW = (cols - 1) * step;
@@ -96,6 +119,9 @@ gridGroup.rotation.set(0, 0, 0); // no tilt, fully frontal
 scene.add(gridGroup);
 
 const pointer = new THREE.Vector2();
+const hoverPlane = new THREE.Plane(new THREE.Vector3(0, 0, 1), 0);
+const hoverPointWorld = new THREE.Vector3();
+let primaryHoveredDieId: string | null = null;
 
 // Removed ISO_BASE_EULER and ISO_BASE_QUAT per instructions
 
@@ -121,6 +147,10 @@ type DieAnimState = {
   die: Die;
   triggers: Trigger[];
   events: SpinEvent[];
+  hoverCurrentScale: number;
+  hoverToScale: number;
+  hoverGlowLineMats: any[];
+  hoverGlowCurrentIntensity: number;
 };
 
 // Raycasting: click/tap a die
@@ -129,7 +159,7 @@ const raycaster = new THREE.Raycaster();
 const animById = new Map<string, DieAnimState>();
 
 // Milliseconds per 90° step. Total duration scales with steps.
-const MS_PER_90 = 160;
+const MS_PER_90 = 120;
 
 function durationForAngleMs(angleRad: number) {
   const steps = Math.max(1, Math.round(Math.abs(angleRad) / (Math.PI / 2)));
@@ -144,7 +174,19 @@ function ensureAnimState(d: Die): DieAnimState {
     die: d,
     triggers: [],
     events: [],
+    hoverCurrentScale: 1,
+    hoverToScale: 1,
+    hoverGlowLineMats: [],
+    hoverGlowCurrentIntensity: 0,
   };
+  d.group.traverse((obj) => {
+    if (!obj.userData.isHoverGlow) return;
+    const mat: any = (obj as any).material;
+    if (mat && typeof mat.linewidth === "number") {
+      st.hoverGlowLineMats.push(mat);
+      return;
+    }
+  });
   animById.set(d.id, st);
   return st;
 }
@@ -276,7 +318,7 @@ function scheduleWaveRoll(clicked: Die) {
   const now = performance.now();
 
   // Ripple effect
-  const delayPerStepMs = 120;
+  const delayPerStepMs = 140;
 
   for (const d of dice) {
     const dr = d.row - clicked.row;
@@ -326,10 +368,48 @@ function insertTrigger(
   st.triggers.sort((a, b) => a.timeMs - b.timeMs);
 }
 
+function setDieHoverTargetScale(st: DieAnimState, targetScale: number) {
+  if (Math.abs(st.hoverToScale - targetScale) < 1e-4) return;
+  st.hoverToScale = targetScale;
+}
+
+function computeHoverTargetScaleFromPointer(candidate: Die, pointerWorld: THREE.Vector3) {
+  const dx = candidate.group.position.x - pointerWorld.x;
+  const dy = candidate.group.position.y - pointerWorld.y;
+  const distSteps = Math.sqrt(dx * dx + dy * dy) / step;
+
+  if (distSteps >= HOVER_FALLOFF_DISTANCE_STEPS) return 1;
+
+  const normalized = 1 - distSteps / HOVER_FALLOFF_DISTANCE_STEPS;
+  const falloff = Math.pow(normalized, HOVER_FALLOFF_POWER);
+  return 1 + (HOVER_MAX_SCALE - 1) * falloff;
+}
+
+function applyHoverTargets(pointerWorld: THREE.Vector3 | null) {
+  primaryHoveredDieId = null;
+  let nearestDistSq = Number.POSITIVE_INFINITY;
+
+  for (const d of dice) {
+    const st = ensureAnimState(d);
+    const targetScale = pointerWorld ? computeHoverTargetScaleFromPointer(d, pointerWorld) : 1;
+    setDieHoverTargetScale(st, targetScale);
+
+    if (!pointerWorld) continue;
+    const dx = d.group.position.x - pointerWorld.x;
+    const dy = d.group.position.y - pointerWorld.y;
+    const distSq = dx * dx + dy * dy;
+    if (distSq < nearestDistSq) {
+      nearestDistSq = distSq;
+      primaryHoveredDieId = d.id;
+    }
+  }
+}
+
 function setHighlight(dieId: string | null) {
   for (const d of dice) {
     const isSelected = dieId === d.id;
     d.group.traverse((obj) => {
+      if (obj.userData.isHoverGlow) return;
       // Only affects materials that have a `color` (lines + pips)
       const mat = (obj as any).material;
       if (!mat || !mat.color) return;
@@ -343,10 +423,7 @@ function setHighlight(dieId: string | null) {
   }
 }
 
-function onPointerDown(ev: PointerEvent) {
-  // Ignore clicks on the HUD
-  if ((ev.target as HTMLElement | null)?.closest?.("#hud")) return;
-
+function getDieIdFromPointer(ev: PointerEvent) {
   const rect = renderer.domElement.getBoundingClientRect();
   const x = ((ev.clientX - rect.left) / rect.width) * 2 - 1;
   const y = -(((ev.clientY - rect.top) / rect.height) * 2 - 1);
@@ -355,13 +432,35 @@ function onPointerDown(ev: PointerEvent) {
   raycaster.setFromCamera(pointer, camera);
 
   const hits = raycaster.intersectObjects(gridGroup.children, true);
-  if (hits.length === 0) return;
+  if (hits.length === 0) return null;
 
-  // Walk up to the object that has dieId
   let obj: THREE.Object3D | null = hits[0].object;
   while (obj && !obj.userData.dieId) obj = obj.parent;
+  return obj?.userData.dieId ?? null;
+}
 
-  const dieId = obj?.userData.dieId ?? null;
+function onPointerMove(ev: PointerEvent) {
+  if ((ev.target as HTMLElement | null)?.closest?.("#hud")) return;
+
+  const rect = renderer.domElement.getBoundingClientRect();
+  const x = ((ev.clientX - rect.left) / rect.width) * 2 - 1;
+  const y = -(((ev.clientY - rect.top) / rect.height) * 2 - 1);
+
+  pointer.set(x, y);
+  raycaster.setFromCamera(pointer, camera);
+  const hitOnPlane = raycaster.ray.intersectPlane(hoverPlane, hoverPointWorld);
+  applyHoverTargets(hitOnPlane ? hoverPointWorld : null);
+}
+
+function onPointerLeave() {
+  applyHoverTargets(null);
+}
+
+function onPointerDown(ev: PointerEvent) {
+  // Ignore clicks on the HUD
+  if ((ev.target as HTMLElement | null)?.closest?.("#hud")) return;
+  const dieId = getDieIdFromPointer(ev);
+  if (!dieId) return;
   setHighlight(dieId);
   console.log("clicked", dieId);
   // If you see no rotation after click, check the console for errors.
@@ -373,6 +472,8 @@ function onPointerDown(ev: PointerEvent) {
 }
 
 renderer.domElement.addEventListener("pointerdown", onPointerDown);
+renderer.domElement.addEventListener("pointermove", onPointerMove);
+renderer.domElement.addEventListener("pointerleave", onPointerLeave);
 
 // HUD: rotation mode
 type RotationMode = "order" | "chaos";
@@ -443,9 +544,32 @@ btnLinesOff?.addEventListener("click", () => {
 function tick() {
 
   const now = performance.now();
+  const dtMs = now - lastTickMs;
+  lastTickMs = now;
+  const hoverBlend = 1 - Math.exp(-dtMs / Math.max(1, HOVER_RESPONSE_MS));
+  const glowBlend = 1 - Math.exp(-dtMs / Math.max(1, HOVER_GLOW_RESPONSE_MS));
 
   for (const d of dice) {
     const st = ensureAnimState(d);
+    st.hoverCurrentScale = THREE.MathUtils.lerp(st.hoverCurrentScale, st.hoverToScale, hoverBlend);
+    const hoverIntensity = THREE.MathUtils.clamp((st.hoverCurrentScale - 1) / Math.max(1e-6, HOVER_MAX_SCALE - 1), 0, 1);
+    const isPrimaryHovered = d.id === primaryHoveredDieId;
+    const glowTargetIntensity = isPrimaryHovered ? hoverIntensity : 0;
+    st.hoverGlowCurrentIntensity = THREE.MathUtils.lerp(
+      st.hoverGlowCurrentIntensity,
+      glowTargetIntensity,
+      glowBlend
+    );
+
+    const glowOpacity = st.hoverGlowCurrentIntensity * HOVER_GLOW_MAX_OPACITY;
+    const glowSpreadMult = THREE.MathUtils.lerp(1, HOVER_GLOW_SPREAD_MULT_AT_PEAK, st.hoverGlowCurrentIntensity);
+    for (const glowLineMat of st.hoverGlowLineMats) {
+      const baseOpacity = Number(glowLineMat.userData?.baseGlowOpacity ?? 0.15);
+      glowLineMat.opacity = glowOpacity * baseOpacity;
+      const baseWidth = Number(glowLineMat.userData?.baseGlowLineWidthPx ?? glowLineMat.linewidth);
+      glowLineMat.linewidth = baseWidth * glowSpreadMult;
+      glowLineMat.needsUpdate = true;
+    }
 
     // 1) Convert due triggers into spin events (additive, no cancel, no queue)
     while (st.triggers.length && st.triggers[0].timeMs <= now) {
@@ -461,7 +585,12 @@ function tick() {
       });
     }
 
-    if (!st.events.length) continue;
+    let spinScale = 1;
+
+    if (!st.events.length) {
+      d.group.scale.setScalar(st.hoverCurrentScale * spinScale);
+      continue;
+    }
 
     // Stable deterministic order so results are consistent
     st.events.sort((a, b) => a.id - b.id);
@@ -472,6 +601,15 @@ function tick() {
 
       const t = Math.min(1, Math.max(0, (now - ev.startTimeMs) / ev.durationMs));
       const eased = easeFastAccelSlowDecel(t);
+      // Spin-linked scale pulse: starts at 100%, reaches SPIN_MIN_SCALE at SPIN_MIN_SCALE_PROGRESS,
+      // then recovers to 100% by the end. Duration is tied to rotation via the same event `t`.
+      const peakProgress = THREE.MathUtils.clamp(SPIN_MIN_SCALE_PROGRESS, 0.01, 0.99);
+      const pulse =
+        t <= peakProgress
+          ? t / peakProgress
+          : Math.max(0, 1 - (t - peakProgress) / (1 - peakProgress));
+      const evSpinScale = 1 - (1 - SPIN_MIN_SCALE) * pulse;
+      spinScale = Math.min(spinScale, evSpinScale);
 
       const deltaE = eased - ev.lastEased;
       ev.lastEased = eased;
@@ -493,11 +631,15 @@ function tick() {
     if (rotationMode === "order" && st.events.length === 0) {
       snapQuatToOrtho90(d.group.quaternion);
     }
+
+    // Hover and spin scales are additive by composition (multiplied), so neither cancels the other.
+    d.group.scale.setScalar(st.hoverCurrentScale * spinScale);
   }
 
   renderer.render(scene, camera);
   requestAnimationFrame(tick);
 }
+let lastTickMs = performance.now();
 tick();
 
 // Resize

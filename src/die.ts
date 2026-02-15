@@ -72,6 +72,35 @@ export function createDie(size = 1.5, lineWidthPx = 1): THREE.Group {
   edgeLines.scale.setScalar(1.0005);
   die.add(edgeLines);
 
+  // Three lightweight glow bands on edges only (no extra pip glow meshes for performance).
+  const glowBands = [
+    { widthPx: lineWidthPx * 2, opacity: 0.22, color: 0xffd6f0 },
+    { widthPx: lineWidthPx * 8, opacity: 0.16, color: 0xff84cc },
+    { widthPx: lineWidthPx * 16, opacity: 0.1, color: 0xff58b0 },
+  ];
+  for (const band of glowBands) {
+    const glowLineMat = new LineMaterial({
+      color: band.color,
+      linewidth: band.widthPx,
+      transparent: true,
+      opacity: 0,
+      depthTest: false,
+      depthWrite: false,
+      blending: THREE.AdditiveBlending,
+    });
+    glowLineMat.resolution.set(window.innerWidth, window.innerHeight);
+    glowLineMat.userData = glowLineMat.userData ?? {};
+    glowLineMat.userData.baseGlowLineWidthPx = glowLineMat.linewidth;
+    glowLineMat.userData.baseGlowOpacity = band.opacity;
+
+    const glowEdgeLines = new LineSegments2(lineGeom, glowLineMat);
+    glowEdgeLines.computeLineDistances();
+    glowEdgeLines.userData.isHoverGlow = true;
+    glowEdgeLines.renderOrder = 2;
+    glowEdgeLines.scale.setScalar(1.0015);
+    die.add(glowEdgeLines);
+  }
+
   // Invisible occluder (depth-only)
   const occluderMat = new THREE.MeshBasicMaterial({ color: 0x000000 });
   occluderMat.colorWrite = false;
