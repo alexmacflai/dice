@@ -12,29 +12,62 @@ function ensureHud() {
   if (!hud) {
     hud = document.createElement("div");
     hud.id = "hud";
-    hud.setAttribute("aria-label", "mode selector");
+    hud.setAttribute("aria-label", "controls");
     hud.innerHTML = `
-      <div class="hud-pill" role="group" aria-label="rotation mode">
-        <button id="mode-order" class="hud-btn is-active" type="button" aria-pressed="true">order</button>
-        <button id="mode-chaos" class="hud-btn" type="button" aria-pressed="false">chaos</button>
+      <div class="hud-bar">
+        <div class="hud-pill" role="group" aria-label="rotation mode">
+          <span class="hud-thumb" aria-hidden="true"></span>
+          <button id="mode-order" class="hud-btn is-active" type="button" aria-pressed="true">order</button>
+          <button id="mode-chaos" class="hud-btn" type="button" aria-pressed="false">chaos</button>
+        </div>
+        <div class="hud-pill" role="group" aria-label="line mode">
+          <span class="hud-thumb" aria-hidden="true"></span>
+          <button id="lines-on" class="hud-btn is-active" type="button" aria-pressed="true">lines</button>
+          <button id="lines-off" class="hud-btn" type="button" aria-pressed="false">no lines</button>
+        </div>
       </div>
     `;
     document.body.appendChild(hud);
   }
 
-  // Inject minimal HUD CSS if it's missing
-  if (!document.querySelector("style[data-hud]") ) {
-    const style = document.createElement("style");
+  // Inject/update HUD CSS (always refresh so edits apply during live reloads).
+  let style = document.querySelector<HTMLStyleElement>("style[data-hud]");
+  if (!style) {
+    style = document.createElement("style");
     style.setAttribute("data-hud", "true");
-    style.textContent = `
-      #hud{position:fixed;left:50%;bottom:18px;transform:translateX(-50%);z-index:9999;pointer-events:auto}
-      .hud-pill{display:inline-flex;gap:2px;padding:4px;border-radius:999px;background:rgba(20,20,20,.82);border:1px solid rgba(255,42,42,.55);box-shadow:0 8px 24px rgba(0,0,0,.65);backdrop-filter:blur(10px)}
-      .hud-btn{appearance:none;border:0;border-radius:999px;padding:6px 10px;font:600 12px/1 system-ui,-apple-system,Segoe UI,Roboto,Helvetica,Arial,sans-serif;letter-spacing:.02em;text-transform:lowercase;color:rgba(255,255,255,.78);background:transparent;cursor:pointer}
-      .hud-btn.is-active{color:#000;background:rgba(255,42,42,.98)}
-      .hud-btn:focus-visible{outline:2px solid rgba(255,42,42,.95);outline-offset:2px}
-    `;
     document.head.appendChild(style);
   }
+  style.textContent = `
+      #hud{position:fixed;left:50%;bottom:18px;transform:translateX(-50%);z-index:9999;pointer-events:auto}
+      .hud-bar{display:flex;align-items:center;gap:12px}
+      .hud-pill{--seg-dur:240ms;--seg-ease:cubic-bezier(.34,1.56,.64,1);--thumb-bg:rgba(255,248,255,.98);position:relative;display:inline-flex;gap:2px;padding:4px;border-radius:999px;background:rgba(20,14,30,.62);border:1px solid rgba(255,176,230,.55);box-shadow:0 8px 24px rgba(0,0,0,.5),0 0 14px rgba(255,132,204,.25);backdrop-filter:blur(10px);isolation:isolate;overflow:hidden;cursor:pointer}
+      .hud-pill *{cursor:pointer}
+      .hud-thumb{position:absolute;top:4px;left:4px;height:calc(100% - 8px);width:40px;border-radius:999px;background:var(--thumb-bg);z-index:2;pointer-events:none;box-shadow:inset 0 0 0 0 var(--thumb-bg),0 0 0 0 var(--thumb-bg),0 0 16px rgba(255,168,224,.35);transition:left var(--seg-dur) var(--seg-ease),width var(--seg-dur) var(--seg-ease),box-shadow var(--seg-dur) var(--seg-ease)}
+      .hud-pill:hover .hud-thumb{box-shadow:inset 0 0 0 2px var(--thumb-bg),0 0 0 2px var(--thumb-bg),0 0 20px rgba(255,168,224,.5)}
+      .hud-mask{position:absolute;inset:0;pointer-events:none;z-index:3;transition:clip-path var(--seg-dur) var(--seg-ease)}
+      .hud-mask-label{position:absolute;display:flex;align-items:center;justify-content:center;font:600 12px/1 system-ui,-apple-system,Segoe UI,Roboto,Helvetica,Arial,sans-serif;letter-spacing:.02em;text-transform:lowercase;color:#280c28;white-space:nowrap}
+      .hud-btn{position:relative;z-index:1;appearance:none;border:0;border-radius:999px;padding:6px 10px;font:600 12px/1 system-ui,-apple-system,Segoe UI,Roboto,Helvetica,Arial,sans-serif;letter-spacing:.02em;text-transform:lowercase;color:rgba(255,236,249,.95);background:transparent;cursor:pointer}
+      .hud-btn.is-active{color:rgba(255,236,249,.95)}
+      .hud-btn:focus-visible{outline:2px solid rgba(255,42,42,.95);outline-offset:2px}
+    `;
+
+  // Ensure existing/static HUD pills have required animated layers.
+  document.querySelectorAll<HTMLDivElement>(".hud-pill").forEach((pill) => {
+    let thumb = pill.querySelector<HTMLSpanElement>(".hud-thumb");
+    if (!thumb) {
+      thumb = document.createElement("span");
+      thumb.className = "hud-thumb";
+      thumb.setAttribute("aria-hidden", "true");
+      pill.prepend(thumb);
+    }
+    let mask = pill.querySelector<HTMLSpanElement>(".hud-mask");
+    if (!mask) {
+      mask = document.createElement("span");
+      mask.className = "hud-mask";
+      mask.setAttribute("aria-hidden", "true");
+      pill.appendChild(mask);
+    }
+  });
 }
 
 ensureHud();
@@ -562,11 +595,86 @@ const btnOrder = document.querySelector<HTMLButtonElement>("#mode-order");
 const btnChaos = document.querySelector<HTMLButtonElement>("#mode-chaos");
 const btnLinesOn = document.querySelector<HTMLButtonElement>("#lines-on");
 const btnLinesOff = document.querySelector<HTMLButtonElement>("#lines-off");
+const modePill = btnOrder?.closest(".hud-pill") as HTMLDivElement | null;
+const linesPill = btnLinesOn?.closest(".hud-pill") as HTMLDivElement | null;
 console.log("HUD buttons", {
   btnOrder: !!btnOrder,
   btnChaos: !!btnChaos,
   foundHud: !!document.querySelector("#hud"),
 });
+
+function ensurePillThumb(pill: HTMLDivElement | null) {
+  if (!pill) return null;
+  let thumb = pill.querySelector<HTMLSpanElement>(".hud-thumb");
+  if (!thumb) {
+    thumb = document.createElement("span");
+    thumb.className = "hud-thumb";
+    thumb.setAttribute("aria-hidden", "true");
+    pill.prepend(thumb);
+  }
+  return thumb;
+}
+
+function ensurePillMask(pill: HTMLDivElement | null) {
+  if (!pill) return null;
+  let mask = pill.querySelector<HTMLSpanElement>(".hud-mask");
+  if (!mask) {
+    mask = document.createElement("span");
+    mask.className = "hud-mask";
+    mask.setAttribute("aria-hidden", "true");
+    pill.appendChild(mask);
+  }
+  return mask;
+}
+
+function syncPillMaskLabels(pill: HTMLDivElement, mask: HTMLSpanElement) {
+  const buttons = Array.from(pill.querySelectorAll<HTMLButtonElement>(".hud-btn"));
+  for (const btn of buttons) {
+    if (!btn.id) continue;
+    let label = mask.querySelector<HTMLSpanElement>(`.hud-mask-label[data-btn-id="${btn.id}"]`);
+    if (!label) {
+      label = document.createElement("span");
+      label.className = "hud-mask-label";
+      label.dataset.btnId = btn.id;
+      mask.appendChild(label);
+    }
+    label.textContent = btn.textContent ?? "";
+    label.style.left = `${btn.offsetLeft}px`;
+    label.style.top = `${btn.offsetTop}px`;
+    label.style.width = `${btn.offsetWidth}px`;
+    label.style.height = `${btn.offsetHeight}px`;
+  }
+}
+
+function positionPillThumb(
+  pill: HTMLDivElement | null,
+  activeBtn: HTMLButtonElement | null,
+  immediate = false
+) {
+  if (!pill || !activeBtn) return;
+  const thumb = ensurePillThumb(pill);
+  const mask = ensurePillMask(pill);
+  if (!thumb || !mask) return;
+
+  const left = activeBtn.offsetLeft;
+  const width = activeBtn.offsetWidth;
+  const right = pill.clientWidth - (left + width);
+  const topInset = 4;
+  const bottomInset = 4;
+
+  if (immediate) thumb.style.transition = "none";
+  if (immediate) mask.style.transition = "none";
+  thumb.style.left = `${Math.round(left)}px`;
+  thumb.style.width = `${Math.round(width)}px`;
+  syncPillMaskLabels(pill, mask);
+  mask.style.clipPath = `inset(${topInset}px ${Math.round(right)}px ${bottomInset}px ${Math.round(left)}px round 999px)`;
+  if (immediate) {
+    requestAnimationFrame(() => {
+      if (thumb) thumb.style.transition = "";
+      if (mask) mask.style.transition = "";
+    });
+  }
+}
 
 function setMode(next: RotationMode) {
   rotationMode = next;
@@ -577,6 +685,7 @@ function setMode(next: RotationMode) {
     btnChaos.classList.toggle("is-active", !isOrder);
     btnOrder.setAttribute("aria-pressed", String(isOrder));
     btnChaos.setAttribute("aria-pressed", String(!isOrder));
+    positionPillThumb(modePill, isOrder ? btnOrder : btnChaos);
   }
 }
 
@@ -612,14 +721,23 @@ function setLines(enabled: boolean) {
 btnLinesOn?.addEventListener("click", () => {
   btnLinesOn.classList.add("is-active");
   btnLinesOff?.classList.remove("is-active");
+  btnLinesOn.setAttribute("aria-pressed", "true");
+  btnLinesOff?.setAttribute("aria-pressed", "false");
+  positionPillThumb(linesPill, btnLinesOn);
   setLines(true);
 });
 
 btnLinesOff?.addEventListener("click", () => {
   btnLinesOff.classList.add("is-active");
   btnLinesOn?.classList.remove("is-active");
+  btnLinesOff.setAttribute("aria-pressed", "true");
+  btnLinesOn?.setAttribute("aria-pressed", "false");
+  positionPillThumb(linesPill, btnLinesOff);
   setLines(false);
 });
+
+positionPillThumb(modePill, btnOrder ?? btnChaos ?? null, true);
+positionPillThumb(linesPill, btnLinesOn ?? btnLinesOff ?? null, true);
 
 // Render loop
 function tick() {
@@ -780,4 +898,10 @@ window.addEventListener("resize", () => {
   renderer.domElement.style.height = "100%";
 
   syncLineMaterialResolution(w, h);
+  positionPillThumb(modePill, rotationMode === "order" ? btnOrder ?? null : btnChaos ?? null, true);
+  positionPillThumb(
+    linesPill,
+    btnLinesOn?.classList.contains("is-active") ? btnLinesOn ?? null : btnLinesOff ?? null,
+    true
+  );
 });
