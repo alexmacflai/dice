@@ -4,98 +4,56 @@ import { createDie, type Die } from "./die";
 import {
   MusicEngine,
   type MusicSelection,
-  type RotationMode as AudioRotationMode,
-  type PlayMode as AudioPlayMode,
 } from "./audio";
+
+// Tunable settings
+const MOBILE_HUD_BREAKPOINT_PX = 900;
+const MAX_PIXEL_RATIO = 2;
+const BASE_DIE_COLOR = 0xfff6ff;
+const HIGHLIGHT_COLOR = 0xffffff;
+const BLUR_LAYER_PX = 8;
+const BASE_DIE_SIZE = 1;
+const DIE_CELL_FILL = 1.1;
+const RIPPLE_DELAY_PER_STEP_MS = 80;
+const ORDER_MS_PER_90 = 120;
+const CHAOS_MS_PER_90 = 120;
+const ORDER_TURNS90_MIN = 2;
+const ORDER_TURNS90_MAX = 6;
+const CHAOS_FULL_TURNS = 1;
+const CHAOS_EXTRA_90_MIN = 0;
+const CHAOS_EXTRA_90_MAX = 4;
+const HOVER_MAX_SCALE = 1.35;
+const HOVER_FALLOFF_DISTANCE_STEPS = 5;
+const HOVER_FALLOFF_POWER = 2;
+const HOVER_RESPONSE_MS = 64;
+const SPIN_MIN_SCALE = 0.24;
+const SPIN_MIN_SCALE_PROGRESS = 0.2;
+
+const ORDER_ROTATION_EASING_FN = (t: number) => {
+  const kick = 0.12;
+  if (t <= kick) {
+    const a = t / kick;
+    return kick * a * a;
+  }
+  const u = (t - kick) / (1 - kick);
+  return kick + (1 - kick) * (1 - Math.pow(1 - u, 3));
+};
+const CHAOS_ROTATION_EASING_FN = ORDER_ROTATION_EASING_FN;
 
 const app = document.querySelector<HTMLDivElement>("#app");
 if (!app) throw new Error("#app not found");
 const appEl = app;
 
-// HUD fallback: ensure the toggle exists even if index.html got messed up
+function ensureHudElement(hud: HTMLDivElement, selector: string, build: () => HTMLElement) {
+  if (hud.querySelector(selector)) return;
+  hud.appendChild(build());
+}
+
 function ensureHud() {
-  let hud = document.querySelector<HTMLDivElement>("#hud");
+  const hud = document.querySelector<HTMLDivElement>("#hud");
+  if (!hud) throw new Error("#hud not found");
 
-  if (!hud) {
-    hud = document.createElement("div");
-    hud.id = "hud";
-    hud.setAttribute("aria-label", "controls");
-    hud.innerHTML = `
-      <div class="hud-bar">
-        <div class="hud-pill" role="group" aria-label="grid scale">
-          <span class="hud-thumb" aria-hidden="true"></span>
-          <button id="grid-scale-05x" class="hud-btn" type="button" aria-pressed="false">0.5x</button>
-          <button id="grid-scale-1x" class="hud-btn is-active" type="button" aria-pressed="true">1x</button>
-          <button id="grid-scale-2x" class="hud-btn" type="button" aria-pressed="false">2x</button>
-        </div>
-        <div class="hud-pill" role="group" aria-label="rotation mode">
-          <span class="hud-thumb" aria-hidden="true"></span>
-          <button id="mode-order" class="hud-btn is-active" type="button" aria-pressed="true">order</button>
-          <button id="mode-chaos" class="hud-btn" type="button" aria-pressed="false">chaos</button>
-        </div>
-        <div class="hud-pill" role="group" aria-label="line mode">
-          <span class="hud-thumb" aria-hidden="true"></span>
-          <button id="lines-on" class="hud-btn is-active" type="button" aria-pressed="true">lines</button>
-          <button id="lines-off" class="hud-btn" type="button" aria-pressed="false">no lines</button>
-        </div>
-        <div class="hud-pill" role="group" aria-label="play mode">
-          <span class="hud-thumb" aria-hidden="true"></span>
-          <button id="play-manual" class="hud-btn is-active" type="button" aria-pressed="true">manual</button>
-          <button id="play-autoplay" class="hud-btn" type="button" aria-pressed="false">autoplay</button>
-        </div>
-        <div class="hud-pill" role="group" aria-label="music mode">
-          <span class="hud-thumb" aria-hidden="true"></span>
-          <button id="music-soft" class="hud-btn is-active" type="button" aria-pressed="true">soft</button>
-          <button id="music-crisp" class="hud-btn" type="button" aria-pressed="false">crisp</button>
-          <button id="music-manic" class="hud-btn" type="button" aria-pressed="false">manic</button>
-          <button id="music-mute" class="hud-btn" type="button" aria-pressed="false">mute</button>
-        </div>
-      </div>
-    `;
-    document.body.appendChild(hud);
-  }
-
-  const hudBar = hud.querySelector<HTMLDivElement>(".hud-bar");
-  if (hudBar && !hud.querySelector("#play-manual")) {
-    const playPill = document.createElement("div");
-    playPill.className = "hud-pill";
-    playPill.setAttribute("role", "group");
-    playPill.setAttribute("aria-label", "play mode");
-    playPill.innerHTML = `
-      <span class="hud-thumb" aria-hidden="true"></span>
-      <button id="play-manual" class="hud-btn is-active" type="button" aria-pressed="true">manual</button>
-      <button id="play-autoplay" class="hud-btn" type="button" aria-pressed="false">autoplay</button>
-    `;
-    hudBar.appendChild(playPill);
-  }
-  if (hudBar && !hud.querySelector("#grid-scale-1x")) {
-    const scalePill = document.createElement("div");
-    scalePill.className = "hud-pill";
-    scalePill.setAttribute("role", "group");
-    scalePill.setAttribute("aria-label", "grid scale");
-    scalePill.innerHTML = `
-      <span class="hud-thumb" aria-hidden="true"></span>
-      <button id="grid-scale-05x" class="hud-btn" type="button" aria-pressed="false">0.5x</button>
-      <button id="grid-scale-1x" class="hud-btn is-active" type="button" aria-pressed="true">1x</button>
-      <button id="grid-scale-2x" class="hud-btn" type="button" aria-pressed="false">2x</button>
-    `;
-    hudBar.insertBefore(scalePill, hudBar.firstElementChild);
-  }
-  if (hudBar && !hud.querySelector("#music-soft")) {
-    const musicPill = document.createElement("div");
-    musicPill.className = "hud-pill";
-    musicPill.setAttribute("role", "group");
-    musicPill.setAttribute("aria-label", "music mode");
-    musicPill.innerHTML = `
-      <span class="hud-thumb" aria-hidden="true"></span>
-      <button id="music-soft" class="hud-btn is-active" type="button" aria-pressed="true">soft</button>
-      <button id="music-crisp" class="hud-btn" type="button" aria-pressed="false">crisp</button>
-      <button id="music-manic" class="hud-btn" type="button" aria-pressed="false">manic</button>
-      <button id="music-mute" class="hud-btn" type="button" aria-pressed="false">mute</button>
-    `;
-    hudBar.appendChild(musicPill);
-  }
-  if (hud && !hud.querySelector(".hud-mobile")) {
+  ensureHudElement(hud, ".hud-mobile", () => {
     const mobileBar = document.createElement("div");
     mobileBar.className = "hud-mobile";
     mobileBar.setAttribute("role", "navigation");
@@ -106,59 +64,40 @@ function ensureHud() {
       <button class="hud-mobile-trigger" type="button" data-menu="play" aria-expanded="false">manual</button>
       <button class="hud-mobile-trigger" type="button" data-menu="music" aria-expanded="false">soft</button>
     `;
-    hud.appendChild(mobileBar);
-  }
-  hud.querySelector('#hud .hud-mobile-trigger[data-menu="scale"]')?.remove();
-  if (hud && !hud.querySelector('#hud .hud-mobile-trigger[data-menu="music"]')) {
-    const mobileBar = hud.querySelector<HTMLDivElement>(".hud-mobile");
-    if (mobileBar) {
-      const trigger = document.createElement("button");
-      trigger.className = "hud-mobile-trigger";
-      trigger.type = "button";
-      trigger.dataset.menu = "music";
-      trigger.setAttribute("aria-expanded", "false");
-      trigger.textContent = "soft";
-      mobileBar.appendChild(trigger);
-    }
-  }
-  if (hud && !hud.querySelector(".hud-mobile-menu")) {
+    return mobileBar;
+  });
+
+  ensureHudElement(hud, ".hud-mobile-menu", () => {
     const mobileMenu = document.createElement("div");
     mobileMenu.className = "hud-mobile-menu";
     mobileMenu.setAttribute("aria-hidden", "true");
-    hud.appendChild(mobileMenu);
-  }
+    return mobileMenu;
+  });
 
-  // Ensure existing/static HUD pills have required animated layers.
-  document.querySelectorAll<HTMLDivElement>(".hud-pill").forEach((pill) => {
-    let thumb = pill.querySelector<HTMLSpanElement>(".hud-thumb");
-    if (!thumb) {
-      thumb = document.createElement("span");
+  hud.querySelectorAll<HTMLDivElement>(".hud-pill").forEach((pill) => {
+    if (!pill.querySelector(".hud-thumb")) {
+      const thumb = document.createElement("span");
       thumb.className = "hud-thumb";
       thumb.setAttribute("aria-hidden", "true");
       pill.prepend(thumb);
     }
-    let mask = pill.querySelector<HTMLSpanElement>(".hud-mask");
-    if (!mask) {
-      mask = document.createElement("span");
+    if (!pill.querySelector(".hud-mask")) {
+      const mask = document.createElement("span");
       mask.className = "hud-mask";
       mask.setAttribute("aria-hidden", "true");
       pill.appendChild(mask);
     }
   });
 }
-
 ensureHud();
-
-const MOBILE_HUD_BREAKPOINT_PX = 900;
-let mobileHudReservePx = 0;
 
 function isMobileHudMode() {
   return window.matchMedia(`(max-width: ${MOBILE_HUD_BREAKPOINT_PX}px)`).matches;
 }
 
 function setMobileHudReserve(px: number) {
-  mobileHudReservePx = Math.max(0, Math.round(px));
-  document.documentElement.style.setProperty("--hud-mobile-reserve", `${mobileHudReservePx}px`);
+  const reservePx = Math.max(0, Math.round(px));
+  document.documentElement.style.setProperty("--hud-mobile-reserve", `${reservePx}px`);
 }
 
 function syncMobileHudReserve() {
@@ -183,68 +122,15 @@ function getViewportSize() {
   };
 }
 
-// Renderer
 const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
-
-// ==== Quick Tuning Controls (keep these near the top) ====
-// Rendering
-const MAX_PIXEL_RATIO = 1.35;
-const BASE_DIE_COLOR = 0xfff6ff;
-const HIGHLIGHT_COLOR = 0xffffff;
-const BLUR_LAYER_PX = 8;
-
-// Grid layout
-const BASE_DIE_SIZE = 1;
-// 1 = fill cell, <1 smaller die in cell, >1 larger die in cell.
-const DIE_CELL_FILL = 1.1;
-
-// Wave/ripple timing
-const RIPPLE_DELAY_PER_STEP_MS = 150;
-
-// Rotation timing (independent for each mode)
-const ORDER_MS_PER_90 = 120;
-const CHAOS_MS_PER_90 = 120;
-
-// Rotation transition/easing for each mode
-const ORDER_ROTATION_EASING_FN = (t: number) => {
-  const kick = 0.12;
-  if (t <= kick) {
-    const a = t / kick;
-    return kick * a * a;
-  }
-  const u = (t - kick) / (1 - kick);
-  return kick + (1 - kick) * (1 - Math.pow(1 - u, 3));
-};
-const CHAOS_ROTATION_EASING_FN = ORDER_ROTATION_EASING_FN;
-const ORDER_TURNS90_MIN = 2;
-const ORDER_TURNS90_MAX = 6;
-const CHAOS_FULL_TURNS = 1;
-const CHAOS_EXTRA_90_MIN = 0;
-const CHAOS_EXTRA_90_MAX = 4;
-
-// Hover scale tuning:
-// Change this value to increase/decrease max hover size (1.10 = 110%).
-const HOVER_MAX_SCALE = 1.35;
-// Change this value to increase/decrease how far the hover influence reaches (in dice-grid steps).
-const HOVER_FALLOFF_DISTANCE_STEPS = 5;
-// Change this value to increase/decrease how much nearby dice scale down with distance.
-const HOVER_FALLOFF_POWER = 2;
-// Change this value to control hover response smoothness.
-// Smaller = snappier response, larger = softer/slower follow.
-const HOVER_RESPONSE_MS = 64;
-// Change this value to increase/decrease how much dice shrink while spinning (0.8 = 80% at deepest point).
-const SPIN_MIN_SCALE = 0.24;
-// Change this value to choose when (during spin progress) the minimum scale is reached.
-// Example: 0.2 means the smallest scale happens at 20% of the rotation duration.
-const SPIN_MIN_SCALE_PROGRESS = 0.2;
 
 type GridLayoutConfig = {
   minCellPx: number;
   maxCellPx: number;
-  cellGapRatio: number; // gapPx = cellPx * ratio
-  outerPaddingPx: number; // safety pad from viewport edges
+  cellGapRatio: number;
+  outerPaddingPx: number;
   maxHoverScale: number;
-  cameraMarginPx: number; // additional framing margin
+  cameraMarginPx: number;
   maxDiceCount?: number;
 };
 
@@ -266,11 +152,11 @@ type GridLayout = {
 const GRID_LAYOUT_CONFIG: GridLayoutConfig = {
   minCellPx: 40,
   maxCellPx: 80,
-  cellGapRatio: 0.5,
+  cellGapRatio: 0.65,
   outerPaddingPx: 4,
   maxHoverScale: HOVER_MAX_SCALE,
   cameraMarginPx: 0,
-  maxDiceCount: 2000,
+  maxDiceCount: 4000,
 };
 
 const AUTOPLAY_BPM_DEFAULT = 64;
@@ -286,7 +172,6 @@ const AUTOPLAY_RHYTHM_BY_MODE: Record<"soft" | "crisp" | "manic", AutoplayRhythm
   },
   crisp: {
     barBeats: 4,
-    // Swing/shuffle feel: bias toward long-short triplet-style spacing.
     multipliers: [2, 1, 1, 2 / 3, 2 / 3, 0.5, 1 / 3, 1 / 3, 0.25, 1 / 12, 1 / 12, 1 / 12, 1 / 12],
   },
   manic: {
@@ -363,9 +248,8 @@ function updateOrthoCameraToViewport(w: number, h: number) {
   camera.updateProjectionMatrix();
 }
 
-// No tilt: grid is fully frontal
 const gridGroup = new THREE.Group();
-gridGroup.rotation.set(0, 0, 0); // no tilt, fully frontal
+gridGroup.rotation.set(0, 0, 0);
 scene.add(gridGroup);
 const blurGridGroup = new THREE.Group();
 blurGridGroup.rotation.set(0, 0, 0);
@@ -385,7 +269,6 @@ let gridStartCenterY = 0;
 const hoverInfluencedIds = new Set<string>();
 let highlightedDieId: string | null = null;
 
-// Removed ISO_BASE_EULER and ISO_BASE_QUAT per instructions
 type RotationMode = "order" | "chaos";
 type PlayMode = "manual" | "autoplay";
 type GridScalePreset = "0.5x" | "1x" | "2x";
@@ -398,8 +281,8 @@ type PersistedSettings = {
 };
 
 const GRID_SCALE_PRESETS: Record<GridScalePreset, { minCellPx: number; maxCellPx: number }> = {
-  "0.5x": { minCellPx: 28, maxCellPx: 56 },
-  "1x": { minCellPx: 40, maxCellPx: 80 },
+  "0.5x": { minCellPx: 32, maxCellPx: 64 },
+  "1x": { minCellPx: 48, maxCellPx: 80 },
   "2x": { minCellPx: 64, maxCellPx: 120 },
 };
 
@@ -458,7 +341,6 @@ function persistSettings() {
   try {
     window.localStorage.setItem(SETTINGS_STORAGE_KEY, JSON.stringify(payload));
   } catch {
-    // Ignore storage failures (private mode, quota, etc).
   }
 }
 
@@ -467,7 +349,6 @@ type Trigger = {
   axisWorld: THREE.Vector3;
   angleRad: number;
   durationMs: number;
-  snapAtEnd: boolean; // true for order
   easingMode: RotationMode;
 };
 
@@ -478,7 +359,6 @@ type SpinEvent = {
   durationMs: number;
   startTimeMs: number;
   lastEased: number;
-  snapAtEnd: boolean;
   easingMode: RotationMode;
 };
 
@@ -488,17 +368,13 @@ type DieAnimState = {
   events: SpinEvent[];
   hoverCurrentScale: number;
   hoverToScale: number;
-  orderSnapActive: boolean;
-  orderSnapFrom: THREE.Quaternion;
   orderSnapTo: THREE.Quaternion;
-  orderSnapStartTimeMs: number;
 };
 
 type PersistedDieState = {
   quaternion: THREE.Quaternion;
 };
 
-// Raycasting: click/tap a die
 const raycaster = new THREE.Raycaster();
 
 const animById = new Map<string, DieAnimState>();
@@ -521,31 +397,22 @@ function ensureAnimState(d: Die): DieAnimState {
     events: [],
     hoverCurrentScale: 1,
     hoverToScale: 1,
-    orderSnapActive: false,
-    orderSnapFrom: new THREE.Quaternion(),
     orderSnapTo: new THREE.Quaternion(),
-    orderSnapStartTimeMs: 0,
   };
   animById.set(d.id, st);
   return st;
 }
 
 function snapQuatToOrtho90(q: THREE.Quaternion) {
-  // Robust snap: project to nearest signed axis-permutation matrix (cube orientation).
-  // This guarantees an exact orthonormal 90°-grid orientation even after lots of accumulated float drift.
-
   const m = new THREE.Matrix4().makeRotationFromQuaternion(q);
   const e = m.elements;
 
-  // Columns of the 3x3 rotation (Three.js uses column-major)
   const cols = [
     new THREE.Vector3(e[0], e[1], e[2]),
     new THREE.Vector3(e[4], e[5], e[6]),
     new THREE.Vector3(e[8], e[9], e[10]),
   ];
 
-  // Pick, for each column, the axis (X/Y/Z) with largest absolute component.
-  // Ensure the chosen axes are unique (permutation) using greedy selection.
   const used = new Set<number>();
   const snappedCols: THREE.Vector3[] = [];
 
@@ -553,7 +420,6 @@ function snapQuatToOrtho90(q: THREE.Quaternion) {
     const v = cols[c];
     const abs = [Math.abs(v.x), Math.abs(v.y), Math.abs(v.z)];
 
-    // Order candidates by strength
     const candidates = [0, 1, 2].sort((a, b) => abs[b] - abs[a]);
 
     let axis = candidates[0];
@@ -572,28 +438,23 @@ function snapQuatToOrtho90(q: THREE.Quaternion) {
     snappedCols.push(out);
   }
 
-  // Rebuild a proper right-handed basis:
-  // set X and Y, then compute Z = X x Y. If it flips, fix Y.
   const x = snappedCols[0].clone();
   let y = snappedCols[1].clone();
   let z = new THREE.Vector3().crossVectors(x, y);
 
   if (z.lengthSq() === 0) {
-    // Degenerate (shouldn’t happen), fall back to identity.
     q.identity();
     return q;
   }
 
   z.normalize();
 
-  // If our snapped third column disagrees with right-handed Z, flip Y.
   const desiredZ = snappedCols[2].clone().normalize();
   if (desiredZ.lengthSq() > 0 && z.dot(desiredZ) < 0) {
     y.multiplyScalar(-1);
     z = new THREE.Vector3().crossVectors(x, y).normalize();
   }
 
-  // Write columns back to matrix
   e[0] = x.x; e[1] = x.y; e[2] = x.z;
   e[4] = y.x; e[5] = y.y; e[6] = y.z;
   e[8] = z.x; e[9] = z.y; e[10] = z.z;
@@ -882,16 +743,8 @@ syncLineMaterialResolution(viewportWidth, viewportHeight);
 
 function scheduleWaveRoll(clicked: Die) {
   const now = performance.now();
-  music.triggerOriginNote({
-    timeMs: now,
-    row: clicked.row,
-    col: clicked.col,
-    dieId: clicked.id,
-    rotationMode: rotationMode as AudioRotationMode,
-    playMode: playMode as AudioPlayMode,
-  });
+  music.triggerOriginNote();
 
-  // Ripple effect
   for (const d of dice) {
     const dr = d.row - clicked.row;
     const dc = d.col - clicked.col;
@@ -904,7 +757,6 @@ function scheduleWaveRoll(clicked: Die) {
     let angleRad: number;
 
     if (rotationMode === "order") {
-      // 0:right, 1:left, 2:up, 3:down
       const dir = randomInt(0, 3);
       axisWorld = new THREE.Vector3(
         dir === 0 ? 1 : dir === 1 ? -1 : 0,
@@ -912,18 +764,18 @@ function scheduleWaveRoll(clicked: Die) {
         0
       ).normalize();
 
-      const turns90 = randomInt(ORDER_TURNS90_MIN, ORDER_TURNS90_MAX); // 180..450 degrees
+      const turns90 = randomInt(ORDER_TURNS90_MIN, ORDER_TURNS90_MAX);
       angleRad = turns90 * (Math.PI / 2);
       const durationMs = durationForAngleMs(angleRad, ORDER_MS_PER_90);
-      insertTrigger(st, startTime, axisWorld, angleRad, durationMs, true, "order");
+      insertTrigger(st, startTime, axisWorld, angleRad, durationMs, "order");
     } else {
       axisWorld = new THREE.Vector3(Math.random(), Math.random(), Math.random()).normalize();
-      const fullTurns = CHAOS_FULL_TURNS; // full 360° spins
-      const remainderTurns = randomInt(CHAOS_EXTRA_90_MIN, CHAOS_EXTRA_90_MAX); // extra 90° chunks
+      const fullTurns = CHAOS_FULL_TURNS;
+      const remainderTurns = randomInt(CHAOS_EXTRA_90_MIN, CHAOS_EXTRA_90_MAX);
       angleRad = fullTurns * Math.PI * 2 + remainderTurns * (Math.PI / 2);
 
       const durationMs = durationForAngleMs(angleRad, CHAOS_MS_PER_90);
-      insertTrigger(st, startTime, axisWorld, angleRad, durationMs, false, "chaos");
+      insertTrigger(st, startTime, axisWorld, angleRad, durationMs, "chaos");
     }
   }
 }
@@ -934,10 +786,9 @@ function insertTrigger(
   axisWorld: THREE.Vector3,
   angleRad: number,
   durationMs: number,
-  snapAtEnd: boolean,
   easingMode: RotationMode
 ) {
-  st.triggers.push({ timeMs, axisWorld, angleRad, durationMs, snapAtEnd, easingMode });
+  st.triggers.push({ timeMs, axisWorld, angleRad, durationMs, easingMode });
   st.triggers.sort((a, b) => a.timeMs - b.timeMs);
 }
 
@@ -1022,7 +873,6 @@ function applyHoverTargets(pointerWorld: THREE.Vector3 | null) {
   }
 
   if (blurActiveDieId === null) {
-    // No active blur yet: assign immediately then fade in.
     blurActiveDieId = primaryHoveredDieId;
     blurPendingDieId = null;
     blurTargetPx = BLUR_LAYER_PX;
@@ -1030,13 +880,11 @@ function applyHoverTargets(pointerWorld: THREE.Vector3 | null) {
   }
 
   if (blurActiveDieId === primaryHoveredDieId) {
-    // Same die: keep fading/holding in.
     blurPendingDieId = null;
     blurTargetPx = BLUR_LAYER_PX;
     return;
   }
 
-  // Different hovered die: fade out old one first, then switch/fade in in tick().
   blurPendingDieId = primaryHoveredDieId;
   blurTargetPx = 0;
 }
@@ -1107,28 +955,20 @@ async function onPointerDown(ev: PointerEvent) {
   try {
     await music.resumeIfNeeded();
   } catch {
-    // If browser blocks resume, this interaction still handles visuals.
   }
-  // Ignore clicks on the HUD
   if ((ev.target as HTMLElement | null)?.closest?.("#hud")) return;
   if (playMode === "autoplay") return;
   const dieId = getDieIdFromPointer(ev);
   if (!dieId) return;
   setHighlight(dieId);
-  console.log("clicked", dieId);
-  // If you see no rotation after click, check the console for errors.
-
-  if (dieId) {
-    const clickedDie = diceById.get(dieId);
-    if (clickedDie) scheduleWaveRoll(clickedDie);
-  }
+  const clickedDie = diceById.get(dieId);
+  if (clickedDie) scheduleWaveRoll(clickedDie);
 }
 
 renderer.domElement.addEventListener("pointerdown", onPointerDown);
 renderer.domElement.addEventListener("pointermove", onPointerMove);
 renderer.domElement.addEventListener("pointerleave", onPointerLeave);
 
-// HUD: rotation mode
 const btnOrder = document.querySelector<HTMLButtonElement>("#mode-order");
 const btnChaos = document.querySelector<HTMLButtonElement>("#mode-chaos");
 const btnLinesOn = document.querySelector<HTMLButtonElement>("#lines-on");
@@ -1147,20 +987,39 @@ const linesPill = btnLinesOn?.closest(".hud-pill") as HTMLDivElement | null;
 const playPill = btnPlayManual?.closest(".hud-pill") as HTMLDivElement | null;
 const scalePill = btnGridScale1x?.closest(".hud-pill") as HTMLDivElement | null;
 const musicPill = btnMusicSoft?.closest(".hud-pill") as HTMLDivElement | null;
-console.log("HUD buttons", {
-  btnOrder: !!btnOrder,
-  btnChaos: !!btnChaos,
-  btnPlayManual: !!btnPlayManual,
-  btnPlayAutoplay: !!btnPlayAutoplay,
-  btnGridScale05x: !!btnGridScale05x,
-  btnGridScale1x: !!btnGridScale1x,
-  btnGridScale2x: !!btnGridScale2x,
-  btnMusicSoft: !!btnMusicSoft,
-  btnMusicCrisp: !!btnMusicCrisp,
-  btnMusicManic: !!btnMusicManic,
-  btnMusicMute: !!btnMusicMute,
-  foundHud: !!document.querySelector("#hud"),
-});
+
+function getActiveModeButton() {
+  return rotationMode === "order" ? btnOrder ?? null : btnChaos ?? null;
+}
+
+function getActiveLinesButton() {
+  return btnLinesOn?.classList.contains("is-active") ? btnLinesOn ?? null : btnLinesOff ?? null;
+}
+
+function getActivePlayButton() {
+  return btnPlayManual?.classList.contains("is-active") ? btnPlayManual ?? null : btnPlayAutoplay ?? null;
+}
+
+function getActiveScaleButton() {
+  if (btnGridScale05x?.classList.contains("is-active")) return btnGridScale05x ?? null;
+  if (btnGridScale1x?.classList.contains("is-active")) return btnGridScale1x ?? null;
+  return btnGridScale2x ?? null;
+}
+
+function getActiveMusicButton() {
+  if (btnMusicSoft?.classList.contains("is-active")) return btnMusicSoft ?? null;
+  if (btnMusicCrisp?.classList.contains("is-active")) return btnMusicCrisp ?? null;
+  if (btnMusicManic?.classList.contains("is-active")) return btnMusicManic ?? null;
+  return btnMusicMute ?? null;
+}
+
+function syncAllPillThumbs(immediate = false) {
+  positionPillThumb(modePill, getActiveModeButton(), immediate);
+  positionPillThumb(linesPill, getActiveLinesButton(), immediate);
+  positionPillThumb(playPill, getActivePlayButton(), immediate);
+  positionPillThumb(scalePill, getActiveScaleButton(), immediate);
+  positionPillThumb(musicPill, getActiveMusicButton(), immediate);
+}
 
 function ensurePillThumb(pill: HTMLDivElement | null) {
   if (!pill) return null;
@@ -1354,7 +1213,6 @@ btnOrder?.addEventListener("click", () => setMode("order"));
 btnChaos?.addEventListener("click", () => setMode("chaos"));
 
 function randomAutoplayIntervalMs() {
-  // Per-mode rhythm profiles make autoplay phrasing feel distinct.
   const rhythmMode = musicSelection === "mute" ? "soft" : musicSelection;
   const profile = AUTOPLAY_RHYTHM_BY_MODE[rhythmMode];
   const msPerBeat = 60000 / Math.max(1, autoplayBpm);
@@ -1558,15 +1416,7 @@ document.addEventListener("pointerdown", (ev) => {
   closeMobileMenu();
 });
 
-positionPillThumb(modePill, btnOrder ?? btnChaos ?? null, true);
-positionPillThumb(linesPill, btnLinesOn ?? btnLinesOff ?? null, true);
-positionPillThumb(playPill, btnPlayManual ?? btnPlayAutoplay ?? null, true);
-positionPillThumb(scalePill, btnGridScale1x ?? btnGridScale05x ?? btnGridScale2x ?? null, true);
-positionPillThumb(
-  musicPill,
-  btnMusicSoft ?? btnMusicCrisp ?? btnMusicManic ?? btnMusicMute ?? null,
-  true
-);
+syncAllPillThumbs(true);
 
 setMode(rotationMode);
 setLinesMode(linesEnabled);
@@ -1587,9 +1437,7 @@ function markAppReady() {
   }
 }
 
-// Render loop
 function tick() {
-
   const now = performance.now();
   const dtMs = now - lastTickMs;
   lastTickMs = now;
@@ -1616,7 +1464,6 @@ function tick() {
     const st = ensureAnimState(d);
     st.hoverCurrentScale = THREE.MathUtils.lerp(st.hoverCurrentScale, st.hoverToScale, hoverBlend);
 
-    // 1) Convert due triggers into spin events (additive, no cancel, no queue)
     while (st.triggers.length && st.triggers[0].timeMs <= now) {
       const trig = st.triggers.shift()!;
       st.events.push({
@@ -1626,18 +1473,12 @@ function tick() {
         durationMs: trig.durationMs,
         startTimeMs: now,
         lastEased: 0,
-        snapAtEnd: trig.snapAtEnd,
         easingMode: trig.easingMode,
       });
     }
 
-    if (st.events.length > 0 && st.orderSnapActive) {
-      st.orderSnapActive = false;
-    }
-
     let spinScale = 1;
     if (st.events.length) {
-      // 2) Apply all active events simultaneously (per-frame delta)
       for (let i = st.events.length - 1; i >= 0; i--) {
         const ev = st.events[i];
 
@@ -1646,8 +1487,6 @@ function tick() {
           ev.easingMode === "order"
             ? ORDER_ROTATION_EASING_FN(t)
             : CHAOS_ROTATION_EASING_FN(t);
-        // Spin-linked scale pulse: starts at 100%, reaches SPIN_MIN_SCALE at SPIN_MIN_SCALE_PROGRESS,
-        // then recovers to 100% by the end. Duration is tied to rotation via the same event `t`.
         const peakProgress = THREE.MathUtils.clamp(SPIN_MIN_SCALE_PROGRESS, 0.01, 0.99);
         const pulse =
           t <= peakProgress
@@ -1662,7 +1501,6 @@ function tick() {
         if (Math.abs(deltaE) > 1e-8) {
           const dAngle = ev.angleRad * deltaE;
           const dq = tempEventQuat.setFromAxisAngle(ev.axisWorld, dAngle);
-          // WORLD rotation => pre-multiply
           d.group.quaternion.premultiply(dq);
         }
 
@@ -1672,8 +1510,6 @@ function tick() {
       }
     }
 
-    // Order mode: continuously steer toward nearest valid face orientation
-    // during rolling so landings are naturally aligned without a final snap.
     if (rotationMode === "order") {
       const targetSnapQuat = st.orderSnapTo.copy(d.group.quaternion);
       snapQuatToOrtho90(targetSnapQuat);
@@ -1682,19 +1518,14 @@ function tick() {
       const settleAlpha = 1 - Math.exp(-dtMs / Math.max(1, settleTauMs));
       d.group.quaternion.slerp(targetSnapQuat, settleAlpha);
 
-      // Finish exactly on-grid once we're effectively settled.
       if (st.events.length === 0 && st.triggers.length === 0) {
         const remaining = quatAngleRad(d.group.quaternion, targetSnapQuat);
         if (remaining < 1e-4) {
           d.group.quaternion.copy(targetSnapQuat);
         }
       }
-      st.orderSnapActive = false;
-    } else {
-      st.orderSnapActive = false;
     }
 
-    // Hover and spin scales are additive by composition (multiplied), so neither cancels the other.
     d.group.scale.setScalar(currentBaseDieScale * st.hoverCurrentScale * spinScale);
     if (st.events.length > 0) {
       activeSpinningDiceCount++;
@@ -1704,7 +1535,6 @@ function tick() {
   music.setRippleActiveCount(activeSpinningDiceCount, dice.length);
   music.tick(now);
 
-  // Blur uses a linear transition (constant px/ms), independent from hover scale easing.
   const blurSpeedPxPerMs = BLUR_LAYER_PX / Math.max(1, HOVER_RESPONSE_MS);
   const blurMaxStep = blurSpeedPxPerMs * dtMs;
   const blurDelta = blurTargetPx - blurCurrentPx;
@@ -1715,10 +1545,8 @@ function tick() {
   }
   const blurNorm = BLUR_LAYER_PX > 0 ? THREE.MathUtils.clamp(blurCurrentPx / BLUR_LAYER_PX, 0, 1) : 0;
   blurRenderer.domElement.style.filter = `blur(${blurCurrentPx.toFixed(3)}px)`;
-  // Fade opacity with blur amount so it doesn't pop in as a sharp duplicate before blur ramps up.
   blurRenderer.domElement.style.opacity = blurNorm.toFixed(3);
 
-  // Complete handoff after fully faded out: switch blurred die, then fade back in.
   if (blurPendingDieId && blurCurrentPx < 0.05) {
     blurActiveDieId = blurPendingDieId;
     blurPendingDieId = null;
@@ -1765,7 +1593,6 @@ window.addEventListener("beforeunload", () => {
   music.dispose();
 });
 
-// Resize
 window.addEventListener("resize", () => {
   const nowMobileHudMode = isMobileHudMode();
   syncMobileHudReserve();
@@ -1792,36 +1619,6 @@ window.addEventListener("resize", () => {
   renderer.domElement.style.height = "100%";
 
   syncLineMaterialResolution(w, h);
-  positionPillThumb(modePill, rotationMode === "order" ? btnOrder ?? null : btnChaos ?? null, true);
-  positionPillThumb(
-    linesPill,
-    btnLinesOn?.classList.contains("is-active") ? btnLinesOn ?? null : btnLinesOff ?? null,
-    true
-  );
-  positionPillThumb(
-    playPill,
-    btnPlayManual?.classList.contains("is-active") ? btnPlayManual ?? null : btnPlayAutoplay ?? null,
-    true
-  );
-  positionPillThumb(
-    scalePill,
-    btnGridScale05x?.classList.contains("is-active")
-      ? btnGridScale05x ?? null
-      : btnGridScale1x?.classList.contains("is-active")
-        ? btnGridScale1x ?? null
-        : btnGridScale2x ?? null,
-    true
-  );
-  positionPillThumb(
-    musicPill,
-    btnMusicSoft?.classList.contains("is-active")
-      ? btnMusicSoft ?? null
-      : btnMusicCrisp?.classList.contains("is-active")
-        ? btnMusicCrisp ?? null
-        : btnMusicManic?.classList.contains("is-active")
-          ? btnMusicManic ?? null
-          : btnMusicMute ?? null,
-    true
-  );
+  syncAllPillThumbs(true);
   syncMobileHudState();
 });
