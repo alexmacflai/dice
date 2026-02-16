@@ -160,7 +160,7 @@ function ensureHud() {
       @media (max-width: 900px) {
         #hud{bottom:0}
         .hud-bar{display:none}
-        .hud-mobile{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));width:100%;padding:10px 12px calc(10px + env(safe-area-inset-bottom));box-sizing:border-box;background:rgba(54,4,46,.96);border-top:1px solid rgba(255,182,229,.52);box-shadow:0 -14px 28px rgba(21,0,18,.55),0 -2px 14px rgba(255,112,193,.18);filter:saturate(1) brightness(1) drop-shadow(0 0 1px rgba(255,214,240,.45)) drop-shadow(0 0 3px rgba(255,132,204,.38)) drop-shadow(0 0 6px rgba(255,88,176,.24));pointer-events:auto}
+        .hud-mobile{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));width:100%;padding:12px 12px calc(12px + env(safe-area-inset-bottom));box-sizing:border-box;background:rgba(54,4,46,.96);border-top:1px solid rgba(255,182,229,.52);box-shadow:0 -14px 28px rgba(21,0,18,.55),0 -2px 14px rgba(255,112,193,.18);filter:saturate(1) brightness(1) drop-shadow(0 0 1px rgba(255,214,240,.45)) drop-shadow(0 0 3px rgba(255,132,204,.38)) drop-shadow(0 0 6px rgba(255,88,176,.24));pointer-events:auto}
         .hud-mobile-trigger{appearance:none;position:relative;border:0;background:transparent;color:rgba(255,230,248,.92);padding:8px 6px;font:600 17px/1.1 system-ui,-apple-system,Segoe UI,Roboto,Helvetica,Arial,sans-serif;text-transform:lowercase;letter-spacing:.02em;white-space:nowrap}
         .hud-mobile-trigger:not(:first-child)::before{content:"";position:absolute;left:0;top:7px;bottom:7px;width:1px;background:rgba(255,205,241,.32)}
         .hud-mobile-trigger.is-open,.hud-mobile-trigger:focus-visible{color:#fff}
