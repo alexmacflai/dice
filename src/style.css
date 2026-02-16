@@ -231,7 +231,7 @@ html, body {
     width: 100%;
     padding: 12px 12px calc(12px + env(safe-area-inset-bottom));
     box-sizing: border-box;
-    background: #2e0a22);
+    background: #2e0a22;
     border-top: 1px solid rgba(255,182,229,.52);
     box-shadow: 0 0px 4px rgba(21,0,18,.4), 0 0px 16px rgba(255,112,193,.25);
     filter: saturate(1) brightness(1) drop-shadow(0 0 1px rgba(255,214,240,.45)) drop-shadow(0 0 3px rgba(255,132,204,.38)) drop-shadow(0 0 6px rgba(255,88,176,.24));
