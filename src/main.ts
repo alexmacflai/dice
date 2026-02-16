@@ -315,9 +315,25 @@ const GRID_LAYOUT_CONFIG: GridLayoutConfig = {
 };
 
 const AUTOPLAY_BPM_DEFAULT = 64;
-const AUTOPLAY_BAR_BEATS = 4;
-// Autoplay divisions
-const AUTOPLAY_RHYTHM_MULTIPLIERS = [4, 2, 1, 0.5, 0.5, 0.5, 0.5, 0.25, 0.25, 0.125, 0.125, 0.0625] as const;
+type AutoplayRhythmProfile = {
+  barBeats: number;
+  multipliers: readonly number[];
+};
+
+const AUTOPLAY_RHYTHM_BY_MODE: Record<"soft" | "crisp" | "weird", AutoplayRhythmProfile> = {
+  soft: {
+    barBeats: 4,
+    multipliers: [4, 2, 1, 0.5, 0.5, 0.25, 0.125],
+  },
+  crisp: {
+    barBeats: 4,
+    multipliers: [2, 1, 0.5, 0.5, 0.5, 0.25, 0.25, 0.125, 0.125, 0.0625],
+  },
+  weird: {
+    barBeats: 3,
+    multipliers: [2, 1, 1, 0.5, 0.5, 0.5, 0.25, 0.25, 0.125],
+  },
+};
 const getRenderPixelRatio = () => Math.min(window.devicePixelRatio, MAX_PIXEL_RATIO);
 
 const blurRenderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
@@ -1310,11 +1326,13 @@ btnOrder?.addEventListener("click", () => setMode("order"));
 btnChaos?.addEventListener("click", () => setMode("chaos"));
 
 function randomAutoplayIntervalMs() {
-  // Treat x1 as one 4-beat bar. Multipliers map to: 4 bars, 2 bars, 1 bar, 1/2 bar, 1/4 bar, 1/8 bar.
+  // Per-mode rhythm profiles make autoplay phrasing feel distinct.
+  const rhythmMode = musicSelection === "mute" ? "soft" : musicSelection;
+  const profile = AUTOPLAY_RHYTHM_BY_MODE[rhythmMode];
   const msPerBeat = 60000 / Math.max(1, autoplayBpm);
-  const msPerBar = msPerBeat * AUTOPLAY_BAR_BEATS;
-  const idx = randomInt(0, AUTOPLAY_RHYTHM_MULTIPLIERS.length - 1);
-  const multiplier = AUTOPLAY_RHYTHM_MULTIPLIERS[idx];
+  const msPerBar = msPerBeat * profile.barBeats;
+  const idx = randomInt(0, profile.multipliers.length - 1);
+  const multiplier = profile.multipliers[idx];
   return msPerBar * multiplier;
 }
 
