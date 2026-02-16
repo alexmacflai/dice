@@ -25,9 +25,28 @@ function ensureHud() {
           <button id="lines-on" class="hud-btn is-active" type="button" aria-pressed="true">lines</button>
           <button id="lines-off" class="hud-btn" type="button" aria-pressed="false">no lines</button>
         </div>
+        <div class="hud-pill" role="group" aria-label="play mode">
+          <span class="hud-thumb" aria-hidden="true"></span>
+          <button id="play-manual" class="hud-btn is-active" type="button" aria-pressed="true">manual</button>
+          <button id="play-autoplay" class="hud-btn" type="button" aria-pressed="false">autoplay</button>
+        </div>
       </div>
     `;
     document.body.appendChild(hud);
+  }
+
+  const hudBar = hud.querySelector<HTMLDivElement>(".hud-bar");
+  if (hudBar && !hud.querySelector("#play-manual")) {
+    const playPill = document.createElement("div");
+    playPill.className = "hud-pill";
+    playPill.setAttribute("role", "group");
+    playPill.setAttribute("aria-label", "play mode");
+    playPill.innerHTML = `
+      <span class="hud-thumb" aria-hidden="true"></span>
+      <button id="play-manual" class="hud-btn is-active" type="button" aria-pressed="true">manual</button>
+      <button id="play-autoplay" class="hud-btn" type="button" aria-pressed="false">autoplay</button>
+    `;
+    hudBar.appendChild(playPill);
   }
 
   // Inject/update HUD CSS (always refresh so edits apply during live reloads).
@@ -85,7 +104,7 @@ const BLUR_LAYER_PX = 8;
 // Grid layout
 const GRID_DIE_SIZE = 1;
 const GRID_COLS = 32;
-const GRID_ROWS = 12;
+const GRID_ROWS = 10;
 const GRID_GAP = 0.8; // space between dice
 const GRID_CAMERA_MARGIN_MULT = 1; // extra framing margin around grid
 
@@ -132,6 +151,9 @@ const SPIN_MIN_SCALE_PROGRESS = 0.2;
 // Order mode only: smooth correction when resting orientation is close-but-not-exact 90° grid.
 const ORDER_SNAP_TRANSITION_MS = 120;
 const ORDER_SNAP_MIN_ANGLE_RAD = THREE.MathUtils.degToRad(0.02);
+const AUTOPLAY_BPM_DEFAULT = 70;
+const AUTOPLAY_BAR_BEATS = 4;
+const AUTOPLAY_RHYTHM_MULTIPLIERS = [4, 2, 1, 0.5, 0.25, 0.125] as const;
 const getRenderPixelRatio = () => Math.min(window.devicePixelRatio, MAX_PIXEL_RATIO);
 
 const blurRenderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
@@ -211,6 +233,7 @@ let blurTargetPx = 0;
 
 // Removed ISO_BASE_EULER and ISO_BASE_QUAT per instructions
 type RotationMode = "order" | "chaos";
+type PlayMode = "manual" | "autoplay";
 
 type Trigger = {
   timeMs: number;
@@ -554,6 +577,10 @@ function getDieIdFromPointer(ev: PointerEvent) {
 
 function onPointerMove(ev: PointerEvent) {
   if ((ev.target as HTMLElement | null)?.closest?.("#hud")) return;
+  if (playMode === "autoplay") {
+    applyHoverTargets(null);
+    return;
+  }
 
   const rect = renderer.domElement.getBoundingClientRect();
   const x = ((ev.clientX - rect.left) / rect.width) * 2 - 1;
@@ -572,6 +599,7 @@ function onPointerLeave() {
 function onPointerDown(ev: PointerEvent) {
   // Ignore clicks on the HUD
   if ((ev.target as HTMLElement | null)?.closest?.("#hud")) return;
+  if (playMode === "autoplay") return;
   const dieId = getDieIdFromPointer(ev);
   if (!dieId) return;
   setHighlight(dieId);
@@ -590,16 +618,24 @@ renderer.domElement.addEventListener("pointerleave", onPointerLeave);
 
 // HUD: rotation mode
 let rotationMode: RotationMode = "order";
+let playMode: PlayMode = "manual";
+let autoplayBpm = AUTOPLAY_BPM_DEFAULT;
+let nextAutoplayRollAtMs = Number.POSITIVE_INFINITY;
 
 const btnOrder = document.querySelector<HTMLButtonElement>("#mode-order");
 const btnChaos = document.querySelector<HTMLButtonElement>("#mode-chaos");
 const btnLinesOn = document.querySelector<HTMLButtonElement>("#lines-on");
 const btnLinesOff = document.querySelector<HTMLButtonElement>("#lines-off");
+const btnPlayManual = document.querySelector<HTMLButtonElement>("#play-manual");
+const btnPlayAutoplay = document.querySelector<HTMLButtonElement>("#play-autoplay");
 const modePill = btnOrder?.closest(".hud-pill") as HTMLDivElement | null;
 const linesPill = btnLinesOn?.closest(".hud-pill") as HTMLDivElement | null;
+const playPill = btnPlayManual?.closest(".hud-pill") as HTMLDivElement | null;
 console.log("HUD buttons", {
   btnOrder: !!btnOrder,
   btnChaos: !!btnChaos,
+  btnPlayManual: !!btnPlayManual,
+  btnPlayAutoplay: !!btnPlayAutoplay,
   foundHud: !!document.querySelector("#hud"),
 });
 
@@ -692,6 +728,44 @@ function setMode(next: RotationMode) {
 btnOrder?.addEventListener("click", () => setMode("order"));
 btnChaos?.addEventListener("click", () => setMode("chaos"));
 
+function randomAutoplayIntervalMs() {
+  // Treat x1 as one 4-beat bar. Multipliers map to: 4 bars, 2 bars, 1 bar, 1/2 bar, 1/4 bar, 1/8 bar.
+  const msPerBeat = 60000 / Math.max(1, autoplayBpm);
+  const msPerBar = msPerBeat * AUTOPLAY_BAR_BEATS;
+  const idx = randomInt(0, AUTOPLAY_RHYTHM_MULTIPLIERS.length - 1);
+  const multiplier = AUTOPLAY_RHYTHM_MULTIPLIERS[idx];
+  return msPerBar * multiplier;
+}
+
+function scheduleNextAutoplayRoll(nowMs: number) {
+  nextAutoplayRollAtMs = nowMs + randomAutoplayIntervalMs();
+}
+
+function setPlayMode(next: PlayMode) {
+  playMode = next;
+  const isManual = next === "manual";
+
+  if (btnPlayManual && btnPlayAutoplay) {
+    btnPlayManual.classList.toggle("is-active", isManual);
+    btnPlayAutoplay.classList.toggle("is-active", !isManual);
+    btnPlayManual.setAttribute("aria-pressed", String(isManual));
+    btnPlayAutoplay.setAttribute("aria-pressed", String(!isManual));
+    positionPillThumb(playPill, isManual ? btnPlayManual : btnPlayAutoplay);
+  }
+
+  if (isManual) {
+    nextAutoplayRollAtMs = Number.POSITIVE_INFINITY;
+    return;
+  }
+
+  setHighlight(null);
+  applyHoverTargets(null);
+  scheduleNextAutoplayRoll(performance.now());
+}
+
+btnPlayManual?.addEventListener("click", () => setPlayMode("manual"));
+btnPlayAutoplay?.addEventListener("click", () => setPlayMode("autoplay"));
+
 function setLines(enabled: boolean) {
   const apply = (group: THREE.Group) => {
     group.traverse((obj) => {
@@ -738,6 +812,7 @@ btnLinesOff?.addEventListener("click", () => {
 
 positionPillThumb(modePill, btnOrder ?? btnChaos ?? null, true);
 positionPillThumb(linesPill, btnLinesOn ?? btnLinesOff ?? null, true);
+positionPillThumb(playPill, btnPlayManual ?? btnPlayAutoplay ?? null, true);
 
 // Render loop
 function tick() {
@@ -746,6 +821,12 @@ function tick() {
   const dtMs = now - lastTickMs;
   lastTickMs = now;
   const hoverBlend = 1 - Math.exp(-dtMs / Math.max(1, HOVER_RESPONSE_MS));
+
+  if (playMode === "autoplay" && now >= nextAutoplayRollAtMs) {
+    const randomDie = dice[randomInt(0, dice.length - 1)];
+    if (randomDie) scheduleWaveRoll(randomDie);
+    scheduleNextAutoplayRoll(now);
+  }
 
   for (const d of dice) {
     const st = ensureAnimState(d);
@@ -902,6 +983,11 @@ window.addEventListener("resize", () => {
   positionPillThumb(
     linesPill,
     btnLinesOn?.classList.contains("is-active") ? btnLinesOn ?? null : btnLinesOff ?? null,
+    true
+  );
+  positionPillThumb(
+    playPill,
+    btnPlayManual?.classList.contains("is-active") ? btnPlayManual ?? null : btnPlayAutoplay ?? null,
     true
   );
 });
