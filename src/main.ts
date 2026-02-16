@@ -47,7 +47,7 @@ function ensureHud() {
           <span class="hud-thumb" aria-hidden="true"></span>
           <button id="music-soft" class="hud-btn is-active" type="button" aria-pressed="true">soft</button>
           <button id="music-crisp" class="hud-btn" type="button" aria-pressed="false">crisp</button>
-          <button id="music-weird" class="hud-btn" type="button" aria-pressed="false">weird</button>
+          <button id="music-manic" class="hud-btn" type="button" aria-pressed="false">manic</button>
           <button id="music-mute" class="hud-btn" type="button" aria-pressed="false">mute</button>
         </div>
       </div>
@@ -90,7 +90,7 @@ function ensureHud() {
       <span class="hud-thumb" aria-hidden="true"></span>
       <button id="music-soft" class="hud-btn is-active" type="button" aria-pressed="true">soft</button>
       <button id="music-crisp" class="hud-btn" type="button" aria-pressed="false">crisp</button>
-      <button id="music-weird" class="hud-btn" type="button" aria-pressed="false">weird</button>
+      <button id="music-manic" class="hud-btn" type="button" aria-pressed="false">manic</button>
       <button id="music-mute" class="hud-btn" type="button" aria-pressed="false">mute</button>
     `;
     hudBar.appendChild(musicPill);
@@ -127,49 +127,6 @@ function ensureHud() {
     mobileMenu.setAttribute("aria-hidden", "true");
     hud.appendChild(mobileMenu);
   }
-
-  // Inject/update HUD CSS (always refresh so edits apply during live reloads).
-  let style = document.querySelector<HTMLStyleElement>("style[data-hud]");
-  if (!style) {
-    style = document.createElement("style");
-    style.setAttribute("data-hud", "true");
-    document.head.appendChild(style);
-  }
-  style.textContent = `
-      :root{--hud-mobile-reserve:0px}
-      #hud{position:fixed;left:0;right:0;bottom:14px;z-index:9999;pointer-events:none}
-      .hud-bar{display:flex;align-items:center;justify-content:center;gap:16px;width:100%;padding:0 14px;box-sizing:border-box;pointer-events:auto}
-      .hud-pill{--seg-dur:240ms;--seg-ease:cubic-bezier(.34,1.56,.64,1);--thumb-bg:rgba(255,248,255,.98);position:relative;display:inline-flex;flex:0 0 auto;gap:0;padding:4px;border-radius:999px;background:rgba(20,14,30,.62);border:1px solid rgba(255,176,230,.55);box-shadow:0 8px 24px rgba(0,0,0,.5),0 0 14px rgba(255,132,204,.25);backdrop-filter:blur(10px);isolation:isolate;overflow:hidden;cursor:pointer;transition:box-shadow 220ms ease,border-color 220ms ease}
-      .hud-pill::after{content:"";position:absolute;inset:-1px;border-radius:999px;pointer-events:none;opacity:0;box-shadow:0 0 0 rgba(255,210,241,0),0 0 0 rgba(255,132,204,0);transition:opacity 220ms ease,box-shadow 220ms ease;z-index:4}
-      .hud-pill:hover::after,.hud-pill:focus-within::after{opacity:1;box-shadow:0 0 14px rgba(255,216,244,.5),0 0 28px rgba(255,128,204,.48)}
-      .hud-pill:hover,.hud-pill:focus-within{border-color:rgba(255,208,240,.85);box-shadow:0 10px 26px rgba(0,0,0,.55),0 0 18px rgba(255,176,230,.48),0 0 34px rgba(255,120,200,.34)}
-      .hud-pill *{cursor:pointer}
-      .hud-thumb{position:absolute;top:4px;left:4px;height:calc(100% - 8px);width:40px;border-radius:999px;background:var(--thumb-bg);z-index:2;pointer-events:none;box-shadow:inset 0 0 0 1px rgba(255,248,255,.72),0 0 0 rgba(255,168,224,0);transition:left var(--seg-dur) var(--seg-ease),width var(--seg-dur) var(--seg-ease),box-shadow var(--seg-dur) var(--seg-ease)}
-      .hud-pill:has(.hud-btn.is-active:hover) .hud-thumb,.hud-pill:has(.hud-btn.is-active:focus-visible) .hud-thumb{box-shadow:inset 0 0 0 2px rgba(255,252,255,.95),0 0 12px rgba(255,188,233,.62),0 0 22px rgba(255,126,203,.42)}
-      .hud-mask{position:absolute;inset:0;pointer-events:none;z-index:3;transition:clip-path var(--seg-dur) var(--seg-ease)}
-      .hud-mask-label{position:absolute;display:flex;align-items:center;justify-content:center;font:600 12px/1 system-ui,-apple-system,Segoe UI,Roboto,Helvetica,Arial,sans-serif;letter-spacing:.02em;text-transform:lowercase;color:#280c28;white-space:nowrap}
-      .hud-btn{position:relative;z-index:1;appearance:none;border:0;border-radius:999px;padding:6px 12px;margin:0 -2px;font:600 12px/1 system-ui,-apple-system,Segoe UI,Roboto,Helvetica,Arial,sans-serif;letter-spacing:.02em;text-transform:lowercase;color:rgba(255,236,249,.95);background:transparent;cursor:pointer;white-space:nowrap;opacity:.8;transition:opacity 180ms ease}
-      .hud-btn:first-of-type{margin-left:0}
-      .hud-btn:last-of-type{margin-right:0}
-      .hud-btn.is-active{color:rgba(255,236,249,.95);opacity:1}
-      .hud-btn:not(.is-active):hover,.hud-btn:not(.is-active):focus-visible{opacity:1}
-      .hud-btn:focus-visible{outline:2px solid rgba(255,42,42,.95);outline-offset:2px}
-      .hud-mobile{display:none}
-      .hud-mobile-menu{display:none}
-      #app{height:calc(100vh - var(--hud-mobile-reserve))}
-      @media (max-width: 900px) {
-        #hud{bottom:0}
-        .hud-bar{display:none}
-        .hud-mobile{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));width:100%;padding:12px 12px calc(12px + env(safe-area-inset-bottom));box-sizing:border-box;background:rgba(54,4,46,.96);border-top:1px solid rgba(255,182,229,.52);box-shadow:0 -14px 28px rgba(21,0,18,.55),0 -2px 14px rgba(255,112,193,.18);filter:saturate(1) brightness(1) drop-shadow(0 0 1px rgba(255,214,240,.45)) drop-shadow(0 0 3px rgba(255,132,204,.38)) drop-shadow(0 0 6px rgba(255,88,176,.24));pointer-events:auto}
-        .hud-mobile-trigger{appearance:none;position:relative;border:0;background:transparent;color:rgba(255,230,248,.92);padding:8px 6px;font:600 17px/1.1 system-ui,-apple-system,Segoe UI,Roboto,Helvetica,Arial,sans-serif;text-transform:lowercase;letter-spacing:.02em;white-space:nowrap}
-        .hud-mobile-trigger:not(:first-child)::before{content:"";position:absolute;left:0;top:7px;bottom:7px;width:1px;background:rgba(255,205,241,.32)}
-        .hud-mobile-trigger.is-open,.hud-mobile-trigger:focus-visible{color:#fff}
-        .hud-mobile-menu{position:absolute;left:0;display:none;min-width:150px;padding:8px;border:1px solid rgba(255,182,229,.58);background:rgba(66,4,54,.98);box-shadow:0 16px 30px rgba(0,0,0,.5),0 0 20px rgba(255,118,200,.2);filter:saturate(1) brightness(1) drop-shadow(0 0 1px rgba(255,214,240,.42)) drop-shadow(0 0 3px rgba(255,132,204,.35)) drop-shadow(0 0 6px rgba(255,88,176,.22));pointer-events:auto}
-        .hud-mobile-menu.is-open{display:grid;gap:4px}
-        .hud-mobile-option{appearance:none;border:0;background:transparent;color:rgba(255,230,248,.92);padding:8px 10px;text-align:center;font:600 25px/1.2 system-ui,-apple-system,Segoe UI,Roboto,Helvetica,Arial,sans-serif;text-transform:lowercase;white-space:nowrap}
-        .hud-mobile-option.is-active{color:#fff}
-      }
-    `;
 
   // Ensure existing/static HUD pills have required animated layers.
   document.querySelectorAll<HTMLDivElement>(".hud-pill").forEach((pill) => {
@@ -238,6 +195,8 @@ const BLUR_LAYER_PX = 8;
 
 // Grid layout
 const BASE_DIE_SIZE = 1;
+// 1 = fill cell, <1 smaller die in cell, >1 larger die in cell.
+const DIE_CELL_FILL = 1.1;
 
 // Wave/ripple timing
 const RIPPLE_DELAY_PER_STEP_MS = 150;
@@ -265,14 +224,14 @@ const CHAOS_EXTRA_90_MAX = 4;
 
 // Hover scale tuning:
 // Change this value to increase/decrease max hover size (1.10 = 110%).
-const HOVER_MAX_SCALE = 1.4;
+const HOVER_MAX_SCALE = 1.35;
 // Change this value to increase/decrease how far the hover influence reaches (in dice-grid steps).
-const HOVER_FALLOFF_DISTANCE_STEPS = 4;
+const HOVER_FALLOFF_DISTANCE_STEPS = 5;
 // Change this value to increase/decrease how much nearby dice scale down with distance.
 const HOVER_FALLOFF_POWER = 2;
 // Change this value to control hover response smoothness.
 // Smaller = snappier response, larger = softer/slower follow.
-const HOVER_RESPONSE_MS = 50;
+const HOVER_RESPONSE_MS = 64;
 // Change this value to increase/decrease how much dice shrink while spinning (0.8 = 80% at deepest point).
 const SPIN_MIN_SCALE = 0.24;
 // Change this value to choose when (during spin progress) the minimum scale is reached.
@@ -307,17 +266,34 @@ type GridLayout = {
 const GRID_LAYOUT_CONFIG: GridLayoutConfig = {
   minCellPx: 40,
   maxCellPx: 80,
-  cellGapRatio: 0.8,
-  outerPaddingPx: 8,
+  cellGapRatio: 0.5,
+  outerPaddingPx: 4,
   maxHoverScale: HOVER_MAX_SCALE,
   cameraMarginPx: 0,
   maxDiceCount: 2000,
 };
 
 const AUTOPLAY_BPM_DEFAULT = 64;
-const AUTOPLAY_BAR_BEATS = 4;
-// Autoplay divisions
-const AUTOPLAY_RHYTHM_MULTIPLIERS = [4, 2, 1, 1, 0.5, 0.5, 0.5, 0.5, 0.25, 0.25, 0.25, 0.25, 0.125, 0.125, 0.0625] as const;
+type AutoplayRhythmProfile = {
+  barBeats: number;
+  multipliers: readonly number[];
+};
+
+const AUTOPLAY_RHYTHM_BY_MODE: Record<"soft" | "crisp" | "manic", AutoplayRhythmProfile> = {
+  soft: {
+    barBeats: 4,
+    multipliers: [4, 2, 1, 1, 0.5, 0.25, 0.25, 0.125],
+  },
+  crisp: {
+    barBeats: 4,
+    // Swing/shuffle feel: bias toward long-short triplet-style spacing.
+    multipliers: [2, 1, 1, 2 / 3, 2 / 3, 0.5, 1 / 3, 1 / 3, 0.25, 1 / 12, 1 / 12, 1 / 12, 1 / 12],
+  },
+  manic: {
+    barBeats: 3,
+    multipliers: [4, 2, 2, 1, 0.5, 0.125, 0.0625],
+  },
+};
 const getRenderPixelRatio = () => Math.min(window.devicePixelRatio, MAX_PIXEL_RATIO);
 
 const blurRenderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
@@ -417,7 +393,7 @@ type PersistedSettings = {
 };
 
 const GRID_SCALE_PRESETS: Record<GridScalePreset, { minCellPx: number; maxCellPx: number }> = {
-  "0.5x": { minCellPx: 24, maxCellPx: 64 },
+  "0.5x": { minCellPx: 28, maxCellPx: 56 },
   "1x": { minCellPx: 40, maxCellPx: 80 },
   "2x": { minCellPx: 64, maxCellPx: 120 },
 };
@@ -449,11 +425,14 @@ let preferredDesktopGridScalePreset: GridScalePreset = initialGridScalePreset;
 let autoplayBpm = AUTOPLAY_BPM_DEFAULT;
 let nextAutoplayRollAtMs = Number.POSITIVE_INFINITY;
 let linesEnabled = persistedSettings.linesEnabled ?? true;
+const legacyMusicSelection = (persistedSettings as { musicSelection?: string }).musicSelection;
 let musicSelection: MusicSelection =
   persistedSettings.musicSelection === "crisp" ||
-  persistedSettings.musicSelection === "weird" ||
+  persistedSettings.musicSelection === "manic" ||
   persistedSettings.musicSelection === "mute"
     ? persistedSettings.musicSelection
+    : legacyMusicSelection === "weird"
+      ? "manic"
     : "soft";
 const music = new MusicEngine({
   initialSelection: musicSelection,
@@ -835,7 +814,7 @@ function applyGridPositions(layout: GridLayout) {
 
   currentStepXWorld = layout.stepXPx * layout.worldUnitsPerPx;
   currentStepYWorld = layout.stepYPx * layout.worldUnitsPerPx;
-  currentBaseDieScale = (layout.cellPx * layout.worldUnitsPerPx) / BASE_DIE_SIZE;
+  currentBaseDieScale = ((layout.cellPx * layout.worldUnitsPerPx) / BASE_DIE_SIZE) * DIE_CELL_FILL;
 
   for (const d of dice) {
     const x = startCenterX + d.col * currentStepXWorld;
@@ -1096,7 +1075,7 @@ const btnGridScale1x = document.querySelector<HTMLButtonElement>("#grid-scale-1x
 const btnGridScale2x = document.querySelector<HTMLButtonElement>("#grid-scale-2x");
 const btnMusicSoft = document.querySelector<HTMLButtonElement>("#music-soft");
 const btnMusicCrisp = document.querySelector<HTMLButtonElement>("#music-crisp");
-const btnMusicWeird = document.querySelector<HTMLButtonElement>("#music-weird");
+const btnMusicManic = document.querySelector<HTMLButtonElement>("#music-manic");
 const btnMusicMute = document.querySelector<HTMLButtonElement>("#music-mute");
 const modePill = btnOrder?.closest(".hud-pill") as HTMLDivElement | null;
 const linesPill = btnLinesOn?.closest(".hud-pill") as HTMLDivElement | null;
@@ -1113,7 +1092,7 @@ console.log("HUD buttons", {
   btnGridScale2x: !!btnGridScale2x,
   btnMusicSoft: !!btnMusicSoft,
   btnMusicCrisp: !!btnMusicCrisp,
-  btnMusicWeird: !!btnMusicWeird,
+  btnMusicManic: !!btnMusicManic,
   btnMusicMute: !!btnMusicMute,
   foundHud: !!document.querySelector("#hud"),
 });
@@ -1216,7 +1195,7 @@ function getMobileMenuOptions(menu: MobileMenuKey) {
   if (menu === "mode") return ["order", "chaos"];
   if (menu === "lines") return ["lines", "no lines"];
   if (menu === "play") return ["manual", "autoplay"];
-  return ["soft", "crisp", "weird", "mute"];
+  return ["soft", "crisp", "manic", "mute"];
 }
 
 function getMobileTrigger(menu: MobileMenuKey) {
@@ -1310,11 +1289,13 @@ btnOrder?.addEventListener("click", () => setMode("order"));
 btnChaos?.addEventListener("click", () => setMode("chaos"));
 
 function randomAutoplayIntervalMs() {
-  // Treat x1 as one 4-beat bar. Multipliers map to: 4 bars, 2 bars, 1 bar, 1/2 bar, 1/4 bar, 1/8 bar.
+  // Per-mode rhythm profiles make autoplay phrasing feel distinct.
+  const rhythmMode = musicSelection === "mute" ? "soft" : musicSelection;
+  const profile = AUTOPLAY_RHYTHM_BY_MODE[rhythmMode];
   const msPerBeat = 60000 / Math.max(1, autoplayBpm);
-  const msPerBar = msPerBeat * AUTOPLAY_BAR_BEATS;
-  const idx = randomInt(0, AUTOPLAY_RHYTHM_MULTIPLIERS.length - 1);
-  const multiplier = AUTOPLAY_RHYTHM_MULTIPLIERS[idx];
+  const msPerBar = msPerBeat * profile.barBeats;
+  const idx = randomInt(0, profile.multipliers.length - 1);
+  const multiplier = profile.multipliers[idx];
   return msPerBar * multiplier;
 }
 
@@ -1364,24 +1345,24 @@ function setMusicSelection(next: MusicSelection) {
 
   const isSoft = next === "soft";
   const isCrisp = next === "crisp";
-  const isWeird = next === "weird";
+  const isManic = next === "manic";
   const isMute = next === "mute";
 
   btnMusicSoft?.classList.toggle("is-active", isSoft);
   btnMusicCrisp?.classList.toggle("is-active", isCrisp);
-  btnMusicWeird?.classList.toggle("is-active", isWeird);
+  btnMusicManic?.classList.toggle("is-active", isManic);
   btnMusicMute?.classList.toggle("is-active", isMute);
   btnMusicSoft?.setAttribute("aria-pressed", String(isSoft));
   btnMusicCrisp?.setAttribute("aria-pressed", String(isCrisp));
-  btnMusicWeird?.setAttribute("aria-pressed", String(isWeird));
+  btnMusicManic?.setAttribute("aria-pressed", String(isManic));
   btnMusicMute?.setAttribute("aria-pressed", String(isMute));
 
   const activeBtn = isSoft
     ? btnMusicSoft
     : isCrisp
       ? btnMusicCrisp
-      : isWeird
-        ? btnMusicWeird
+      : isManic
+        ? btnMusicManic
         : btnMusicMute;
   positionPillThumb(musicPill, activeBtn ?? null);
   syncMobileHudState();
@@ -1394,7 +1375,7 @@ function setMusicSelection(next: MusicSelection) {
 
 btnMusicSoft?.addEventListener("click", () => setMusicSelection("soft"));
 btnMusicCrisp?.addEventListener("click", () => setMusicSelection("crisp"));
-btnMusicWeird?.addEventListener("click", () => setMusicSelection("weird"));
+btnMusicManic?.addEventListener("click", () => setMusicSelection("manic"));
 btnMusicMute?.addEventListener("click", () => setMusicSelection("mute"));
 
 function setGridScalePreset(preset: GridScalePreset, options?: { persist?: boolean }) {
@@ -1500,7 +1481,7 @@ mobileMenu?.addEventListener("click", (ev) => {
   if (menu === "mode" && (value === "order" || value === "chaos")) setMode(value);
   if (menu === "lines") setLinesMode(value === "lines");
   if (menu === "play" && (value === "manual" || value === "autoplay")) setPlayMode(value);
-  if (menu === "music" && (value === "soft" || value === "crisp" || value === "weird" || value === "mute")) {
+  if (menu === "music" && (value === "soft" || value === "crisp" || value === "manic" || value === "mute")) {
     setMusicSelection(value);
   }
   closeMobileMenu();
@@ -1518,7 +1499,7 @@ positionPillThumb(playPill, btnPlayManual ?? btnPlayAutoplay ?? null, true);
 positionPillThumb(scalePill, btnGridScale1x ?? btnGridScale05x ?? btnGridScale2x ?? null, true);
 positionPillThumb(
   musicPill,
-  btnMusicSoft ?? btnMusicCrisp ?? btnMusicWeird ?? btnMusicMute ?? null,
+  btnMusicSoft ?? btnMusicCrisp ?? btnMusicManic ?? btnMusicMute ?? null,
   true
 );
 
@@ -1745,8 +1726,8 @@ window.addEventListener("resize", () => {
       ? btnMusicSoft ?? null
       : btnMusicCrisp?.classList.contains("is-active")
         ? btnMusicCrisp ?? null
-        : btnMusicWeird?.classList.contains("is-active")
-          ? btnMusicWeird ?? null
+        : btnMusicManic?.classList.contains("is-active")
+          ? btnMusicManic ?? null
           : btnMusicMute ?? null,
     true
   );
