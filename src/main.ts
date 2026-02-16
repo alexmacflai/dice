@@ -4,6 +4,7 @@ import { createDie, type Die } from "./die";
 
 const app = document.querySelector<HTMLDivElement>("#app");
 if (!app) throw new Error("#app not found");
+const appEl = app;
 
 // HUD fallback: ensure the toggle exists even if index.html got messed up
 function ensureHud() {
@@ -67,6 +68,25 @@ function ensureHud() {
     `;
     hudBar.appendChild(scalePill);
   }
+  if (hud && !hud.querySelector(".hud-mobile")) {
+    const mobileBar = document.createElement("div");
+    mobileBar.className = "hud-mobile";
+    mobileBar.setAttribute("role", "navigation");
+    mobileBar.setAttribute("aria-label", "mobile controls");
+    mobileBar.innerHTML = `
+      <button class="hud-mobile-trigger" type="button" data-menu="mode" aria-expanded="false">order</button>
+      <button class="hud-mobile-trigger" type="button" data-menu="lines" aria-expanded="false">lines</button>
+      <button class="hud-mobile-trigger" type="button" data-menu="play" aria-expanded="false">manual</button>
+      <button class="hud-mobile-trigger" type="button" data-menu="scale" aria-expanded="false">1x</button>
+    `;
+    hud.appendChild(mobileBar);
+  }
+  if (hud && !hud.querySelector(".hud-mobile-menu")) {
+    const mobileMenu = document.createElement("div");
+    mobileMenu.className = "hud-mobile-menu";
+    mobileMenu.setAttribute("aria-hidden", "true");
+    hud.appendChild(mobileMenu);
+  }
 
   // Inject/update HUD CSS (always refresh so edits apply during live reloads).
   let style = document.querySelector<HTMLStyleElement>("style[data-hud]");
@@ -76,17 +96,39 @@ function ensureHud() {
     document.head.appendChild(style);
   }
   style.textContent = `
-      #hud{position:fixed;left:50%;bottom:18px;transform:translateX(-50%);z-index:9999;pointer-events:auto}
-      .hud-bar{display:flex;align-items:center;gap:12px}
-      .hud-pill{--seg-dur:240ms;--seg-ease:cubic-bezier(.34,1.56,.64,1);--thumb-bg:rgba(255,248,255,.98);position:relative;display:inline-flex;gap:2px;padding:4px;border-radius:999px;background:rgba(20,14,30,.62);border:1px solid rgba(255,176,230,.55);box-shadow:0 8px 24px rgba(0,0,0,.5),0 0 14px rgba(255,132,204,.25);backdrop-filter:blur(10px);isolation:isolate;overflow:hidden;cursor:pointer}
+      :root{--hud-mobile-reserve:0px}
+      #hud{position:fixed;left:0;right:0;bottom:14px;z-index:9999;pointer-events:none}
+      .hud-bar{display:flex;align-items:center;justify-content:center;gap:24px;width:100%;padding:0 14px;box-sizing:border-box;pointer-events:auto}
+      .hud-pill{--seg-dur:240ms;--seg-ease:cubic-bezier(.34,1.56,.64,1);--thumb-bg:rgba(255,248,255,.98);position:relative;display:inline-flex;flex:0 0 auto;gap:0;padding:4px;border-radius:999px;background:rgba(20,14,30,.62);border:1px solid rgba(255,176,230,.55);box-shadow:0 8px 24px rgba(0,0,0,.5),0 0 14px rgba(255,132,204,.25);backdrop-filter:blur(10px);isolation:isolate;overflow:hidden;cursor:pointer;transition:box-shadow 220ms ease,border-color 220ms ease}
+      .hud-pill::after{content:"";position:absolute;inset:-1px;border-radius:999px;pointer-events:none;opacity:0;box-shadow:0 0 0 rgba(255,210,241,0),0 0 0 rgba(255,132,204,0);transition:opacity 220ms ease,box-shadow 220ms ease;z-index:4}
+      .hud-pill:hover::after,.hud-pill:focus-within::after{opacity:1;box-shadow:0 0 14px rgba(255,216,244,.5),0 0 28px rgba(255,128,204,.48)}
+      .hud-pill:hover,.hud-pill:focus-within{border-color:rgba(255,208,240,.85);box-shadow:0 10px 26px rgba(0,0,0,.55),0 0 18px rgba(255,176,230,.48),0 0 34px rgba(255,120,200,.34)}
       .hud-pill *{cursor:pointer}
-      .hud-thumb{position:absolute;top:4px;left:4px;height:calc(100% - 8px);width:40px;border-radius:999px;background:var(--thumb-bg);z-index:2;pointer-events:none;box-shadow:inset 0 0 0 0 var(--thumb-bg),0 0 0 0 var(--thumb-bg),0 0 16px rgba(255,168,224,.35);transition:left var(--seg-dur) var(--seg-ease),width var(--seg-dur) var(--seg-ease),box-shadow var(--seg-dur) var(--seg-ease)}
-      .hud-pill:hover .hud-thumb{box-shadow:inset 0 0 0 2px var(--thumb-bg),0 0 0 2px var(--thumb-bg),0 0 20px rgba(255,168,224,.5)}
+      .hud-thumb{position:absolute;top:4px;left:4px;height:calc(100% - 8px);width:40px;border-radius:999px;background:var(--thumb-bg);z-index:2;pointer-events:none;box-shadow:inset 0 0 0 1px rgba(255,248,255,.72),0 0 0 rgba(255,168,224,0);transition:left var(--seg-dur) var(--seg-ease),width var(--seg-dur) var(--seg-ease),box-shadow var(--seg-dur) var(--seg-ease)}
+      .hud-pill:has(.hud-btn.is-active:hover) .hud-thumb,.hud-pill:has(.hud-btn.is-active:focus-visible) .hud-thumb{box-shadow:inset 0 0 0 2px rgba(255,252,255,.95),0 0 12px rgba(255,188,233,.62),0 0 22px rgba(255,126,203,.42)}
       .hud-mask{position:absolute;inset:0;pointer-events:none;z-index:3;transition:clip-path var(--seg-dur) var(--seg-ease)}
       .hud-mask-label{position:absolute;display:flex;align-items:center;justify-content:center;font:600 12px/1 system-ui,-apple-system,Segoe UI,Roboto,Helvetica,Arial,sans-serif;letter-spacing:.02em;text-transform:lowercase;color:#280c28;white-space:nowrap}
-      .hud-btn{position:relative;z-index:1;appearance:none;border:0;border-radius:999px;padding:6px 10px;font:600 12px/1 system-ui,-apple-system,Segoe UI,Roboto,Helvetica,Arial,sans-serif;letter-spacing:.02em;text-transform:lowercase;color:rgba(255,236,249,.95);background:transparent;cursor:pointer}
-      .hud-btn.is-active{color:rgba(255,236,249,.95)}
+      .hud-btn{position:relative;z-index:1;appearance:none;border:0;border-radius:999px;padding:6px 12px;margin:0 -2px;font:600 12px/1 system-ui,-apple-system,Segoe UI,Roboto,Helvetica,Arial,sans-serif;letter-spacing:.02em;text-transform:lowercase;color:rgba(255,236,249,.95);background:transparent;cursor:pointer;white-space:nowrap;opacity:.8;transition:opacity 180ms ease}
+      .hud-btn:first-of-type{margin-left:0}
+      .hud-btn:last-of-type{margin-right:0}
+      .hud-btn.is-active{color:rgba(255,236,249,.95);opacity:1}
+      .hud-btn:not(.is-active):hover,.hud-btn:not(.is-active):focus-visible{opacity:1}
       .hud-btn:focus-visible{outline:2px solid rgba(255,42,42,.95);outline-offset:2px}
+      .hud-mobile{display:none}
+      .hud-mobile-menu{display:none}
+      #app{height:calc(100vh - var(--hud-mobile-reserve))}
+      @media (max-width: 900px) {
+        #hud{bottom:0}
+        .hud-bar{display:none}
+        .hud-mobile{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));width:100%;padding:10px 12px calc(10px + env(safe-area-inset-bottom));box-sizing:border-box;background:rgba(54,4,46,.96);border-top:1px solid rgba(255,182,229,.52);box-shadow:0 -14px 28px rgba(21,0,18,.55),0 -2px 14px rgba(255,112,193,.18);filter:saturate(1) brightness(1) drop-shadow(0 0 1px rgba(255,214,240,.45)) drop-shadow(0 0 3px rgba(255,132,204,.38)) drop-shadow(0 0 6px rgba(255,88,176,.24));pointer-events:auto}
+        .hud-mobile-trigger{appearance:none;position:relative;border:0;background:transparent;color:rgba(255,230,248,.92);padding:8px 6px;font:600 17px/1.1 system-ui,-apple-system,Segoe UI,Roboto,Helvetica,Arial,sans-serif;text-transform:lowercase;letter-spacing:.02em;white-space:nowrap}
+        .hud-mobile-trigger:not(:first-child)::before{content:"";position:absolute;left:0;top:7px;bottom:7px;width:1px;background:rgba(255,205,241,.32)}
+        .hud-mobile-trigger.is-open,.hud-mobile-trigger:focus-visible{color:#fff}
+        .hud-mobile-menu{position:absolute;left:0;display:none;min-width:150px;padding:8px;border:1px solid rgba(255,182,229,.58);background:rgba(66,4,54,.98);box-shadow:0 16px 30px rgba(0,0,0,.5),0 0 20px rgba(255,118,200,.2);filter:saturate(1) brightness(1) drop-shadow(0 0 1px rgba(255,214,240,.42)) drop-shadow(0 0 3px rgba(255,132,204,.35)) drop-shadow(0 0 6px rgba(255,88,176,.22));pointer-events:auto}
+        .hud-mobile-menu.is-open{display:grid;gap:4px}
+        .hud-mobile-option{appearance:none;border:0;background:transparent;color:rgba(255,230,248,.92);padding:8px 10px;text-align:center;font:600 25px/1.2 system-ui,-apple-system,Segoe UI,Roboto,Helvetica,Arial,sans-serif;text-transform:lowercase;white-space:nowrap}
+        .hud-mobile-option.is-active{color:#fff}
+      }
     `;
 
   // Ensure existing/static HUD pills have required animated layers.
@@ -109,6 +151,38 @@ function ensureHud() {
 }
 
 ensureHud();
+
+const MOBILE_HUD_BREAKPOINT_PX = 900;
+let mobileHudReservePx = 0;
+
+function isMobileHudMode() {
+  return window.matchMedia(`(max-width: ${MOBILE_HUD_BREAKPOINT_PX}px)`).matches;
+}
+
+function setMobileHudReserve(px: number) {
+  mobileHudReservePx = Math.max(0, Math.round(px));
+  document.documentElement.style.setProperty("--hud-mobile-reserve", `${mobileHudReservePx}px`);
+}
+
+function syncMobileHudReserve() {
+  if (!isMobileHudMode()) {
+    setMobileHudReserve(0);
+    return;
+  }
+  const hudMobile = document.querySelector<HTMLDivElement>("#hud .hud-mobile");
+  if (!hudMobile) {
+    setMobileHudReserve(0);
+    return;
+  }
+  setMobileHudReserve(hudMobile.offsetHeight);
+}
+
+function getViewportSize() {
+  return {
+    width: Math.max(1, appEl.clientWidth),
+    height: Math.max(1, appEl.clientHeight),
+  };
+}
 
 // Renderer
 const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
@@ -210,17 +284,20 @@ const blurRenderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
 blurRenderer.domElement.classList.add("blur-layer");
 blurRenderer.domElement.style.pointerEvents = "none";
 renderer.domElement.classList.add("main-layer");
+
+syncMobileHudReserve();
+const initialViewport = getViewportSize();
 renderer.setPixelRatio(getRenderPixelRatio());
-renderer.setSize(app.clientWidth, app.clientHeight);
+renderer.setSize(initialViewport.width, initialViewport.height);
 renderer.setClearColor(0x000000, 0);
 blurRenderer.setPixelRatio(getRenderPixelRatio());
-blurRenderer.setSize(app.clientWidth, app.clientHeight);
+blurRenderer.setSize(initialViewport.width, initialViewport.height);
 blurRenderer.setClearColor(0x000000, 0);
 blurRenderer.domElement.style.filter = "blur(0px)";
 blurRenderer.domElement.style.opacity = "0";
 blurRenderer.domElement.style.mixBlendMode = "screen";
-app.appendChild(blurRenderer.domElement);
-app.appendChild(renderer.domElement);
+appEl.appendChild(blurRenderer.domElement);
+appEl.appendChild(renderer.domElement);
 
 // Scene
 const scene = new THREE.Scene();
@@ -236,8 +313,8 @@ camera.lookAt(0, 0, 0);
 // Dice grid
 const dice: Die[] = [];
 const diceById = new Map<string, Die>();
-let viewportWidth = app.clientWidth;
-let viewportHeight = app.clientHeight;
+let viewportWidth = appEl.clientWidth;
+let viewportHeight = appEl.clientHeight;
 let currentStepXWorld = BASE_DIE_SIZE;
 let currentStepYWorld = BASE_DIE_SIZE;
 let currentBaseDieScale = 1;
@@ -300,6 +377,7 @@ const GRID_SCALE_PRESETS: Record<GridScalePreset, { minCellPx: number; maxCellPx
 
 let rotationMode: RotationMode = "order";
 let playMode: PlayMode = "manual";
+let currentGridScalePreset: GridScalePreset = "1x";
 let autoplayBpm = AUTOPLAY_BPM_DEFAULT;
 let nextAutoplayRollAtMs = Number.POSITIVE_INFINITY;
 let linesEnabled = true;
@@ -700,7 +778,10 @@ function syncLineMaterialResolution(width: number, height: number) {
   }
 }
 
-relayoutToViewport(app.clientWidth, app.clientHeight);
+{
+  const { width, height } = getViewportSize();
+  relayoutToViewport(width, height);
+}
 syncLineMaterialResolution(viewportWidth, viewportHeight);
 
 function scheduleWaveRoll(clicked: Die) {
@@ -992,6 +1073,101 @@ function positionPillThumb(
   }
 }
 
+type MobileMenuKey = "mode" | "lines" | "play" | "scale";
+
+const mobileBar = document.querySelector<HTMLDivElement>("#hud .hud-mobile");
+const mobileMenu = document.querySelector<HTMLDivElement>("#hud .hud-mobile-menu");
+const mobileTriggers = Array.from(
+  document.querySelectorAll<HTMLButtonElement>("#hud .hud-mobile-trigger")
+);
+let openMobileMenuKey: MobileMenuKey | null = null;
+
+function getMobileMenuValue(menu: MobileMenuKey) {
+  if (menu === "mode") return rotationMode;
+  if (menu === "lines") return linesEnabled ? "lines" : "no lines";
+  if (menu === "play") return playMode;
+  return currentGridScalePreset;
+}
+
+function getMobileMenuOptions(menu: MobileMenuKey) {
+  if (menu === "mode") return ["order", "chaos"];
+  if (menu === "lines") return ["lines", "no lines"];
+  if (menu === "play") return ["manual", "autoplay"];
+  return ["0.5x", "1x", "2x"];
+}
+
+function getMobileTrigger(menu: MobileMenuKey) {
+  return mobileTriggers.find((trigger) => trigger.dataset.menu === menu) ?? null;
+}
+
+function syncMobileHudState() {
+  for (const trigger of mobileTriggers) {
+    const menu = trigger.dataset.menu as MobileMenuKey | undefined;
+    if (!menu) continue;
+    trigger.textContent = getMobileMenuValue(menu);
+    const isOpen = openMobileMenuKey === menu;
+    trigger.classList.toggle("is-open", isOpen);
+    trigger.setAttribute("aria-expanded", String(isOpen));
+  }
+
+  if (openMobileMenuKey) {
+    renderMobileMenu(openMobileMenuKey);
+    positionMobileMenu(openMobileMenuKey);
+  }
+}
+
+function positionMobileMenu(menu: MobileMenuKey) {
+  if (!mobileMenu || !mobileBar) return;
+  const hud = document.querySelector<HTMLDivElement>("#hud");
+  const trigger = getMobileTrigger(menu);
+  if (!hud || !trigger) return;
+
+  const hudRect = hud.getBoundingClientRect();
+  const triggerRect = trigger.getBoundingClientRect();
+  const menuWidth = mobileMenu.offsetWidth;
+  const centeredLeft = triggerRect.left + triggerRect.width / 2 - menuWidth / 2 - hudRect.left;
+  const minLeft = 8;
+  const maxLeft = Math.max(minLeft, hudRect.width - menuWidth - 8);
+  const clampedLeft = Math.max(minLeft, Math.min(maxLeft, centeredLeft));
+
+  mobileMenu.style.left = `${Math.round(clampedLeft)}px`;
+  mobileMenu.style.bottom = `${Math.round(mobileBar.offsetHeight + 8)}px`;
+}
+
+function closeMobileMenu() {
+  openMobileMenuKey = null;
+  if (!mobileMenu) return;
+  mobileMenu.classList.remove("is-open");
+  mobileMenu.setAttribute("aria-hidden", "true");
+  syncMobileHudState();
+}
+
+function renderMobileMenu(menu: MobileMenuKey) {
+  if (!mobileMenu) return;
+  const selectedValue = getMobileMenuValue(menu);
+  const options = getMobileMenuOptions(menu);
+  mobileMenu.innerHTML = options
+    .map((value) => {
+      const isActive = value === selectedValue;
+      return `<button class="hud-mobile-option ${isActive ? "is-active" : ""}" type="button" data-menu="${menu}" data-value="${value}">${value}</button>`;
+    })
+    .join("");
+}
+
+function openMobileMenu(menu: MobileMenuKey) {
+  if (!mobileMenu) return;
+  if (openMobileMenuKey === menu) {
+    closeMobileMenu();
+    return;
+  }
+
+  openMobileMenuKey = menu;
+  renderMobileMenu(menu);
+  mobileMenu.classList.add("is-open");
+  mobileMenu.setAttribute("aria-hidden", "false");
+  syncMobileHudState();
+}
+
 function setMode(next: RotationMode) {
   rotationMode = next;
 
@@ -1003,6 +1179,7 @@ function setMode(next: RotationMode) {
     btnChaos.setAttribute("aria-pressed", String(!isOrder));
     positionPillThumb(modePill, isOrder ? btnOrder : btnChaos);
   }
+  syncMobileHudState();
 }
 
 btnOrder?.addEventListener("click", () => setMode("order"));
@@ -1032,6 +1209,7 @@ function setPlayMode(next: PlayMode) {
     btnPlayAutoplay.setAttribute("aria-pressed", String(!isManual));
     positionPillThumb(playPill, isManual ? btnPlayManual : btnPlayAutoplay);
   }
+  syncMobileHudState();
 
   if (isManual) {
     nextAutoplayRollAtMs = Number.POSITIVE_INFINITY;
@@ -1047,6 +1225,7 @@ btnPlayManual?.addEventListener("click", () => setPlayMode("manual"));
 btnPlayAutoplay?.addEventListener("click", () => setPlayMode("autoplay"));
 
 function setGridScalePreset(preset: GridScalePreset) {
+  currentGridScalePreset = preset;
   const values = GRID_SCALE_PRESETS[preset];
   GRID_LAYOUT_CONFIG.minCellPx = values.minCellPx;
   GRID_LAYOUT_CONFIG.maxCellPx = values.maxCellPx;
@@ -1062,6 +1241,7 @@ function setGridScalePreset(preset: GridScalePreset) {
   btnGridScale1x?.setAttribute("aria-pressed", String(is1));
   btnGridScale2x?.setAttribute("aria-pressed", String(is2));
   positionPillThumb(scalePill, is05 ? btnGridScale05x ?? null : is1 ? btnGridScale1x ?? null : btnGridScale2x ?? null);
+  syncMobileHudState();
 
   relayoutToViewport(viewportWidth, viewportHeight);
   syncLineMaterialResolution(viewportWidth, viewportHeight);
@@ -1099,28 +1279,61 @@ function setLines(enabled: boolean) {
   for (const blurGroup of blurGroupById.values()) applyLinesToGroup(blurGroup, enabled);
 }
 
-btnLinesOn?.addEventListener("click", () => {
-  btnLinesOn.classList.add("is-active");
-  btnLinesOff?.classList.remove("is-active");
-  btnLinesOn.setAttribute("aria-pressed", "true");
-  btnLinesOff?.setAttribute("aria-pressed", "false");
-  positionPillThumb(linesPill, btnLinesOn);
-  setLines(true);
+function setLinesMode(enabled: boolean) {
+  if (enabled) {
+    btnLinesOn?.classList.add("is-active");
+    btnLinesOff?.classList.remove("is-active");
+    btnLinesOn?.setAttribute("aria-pressed", "true");
+    btnLinesOff?.setAttribute("aria-pressed", "false");
+    positionPillThumb(linesPill, btnLinesOn ?? null);
+  } else {
+    btnLinesOff?.classList.add("is-active");
+    btnLinesOn?.classList.remove("is-active");
+    btnLinesOff?.setAttribute("aria-pressed", "true");
+    btnLinesOn?.setAttribute("aria-pressed", "false");
+    positionPillThumb(linesPill, btnLinesOff ?? null);
+  }
+  setLines(enabled);
+  syncMobileHudState();
+}
+
+btnLinesOn?.addEventListener("click", () => setLinesMode(true));
+btnLinesOff?.addEventListener("click", () => setLinesMode(false));
+
+for (const trigger of mobileTriggers) {
+  trigger.addEventListener("click", () => {
+    const menu = trigger.dataset.menu as MobileMenuKey | undefined;
+    if (!menu) return;
+    openMobileMenu(menu);
+  });
+}
+
+mobileMenu?.addEventListener("click", (ev) => {
+  const button = (ev.target as HTMLElement | null)?.closest?.(".hud-mobile-option") as HTMLButtonElement | null;
+  if (!button) return;
+  const menu = button.dataset.menu as MobileMenuKey | undefined;
+  const value = button.dataset.value;
+  if (!menu || !value) return;
+
+  if (menu === "mode" && (value === "order" || value === "chaos")) setMode(value);
+  if (menu === "lines") setLinesMode(value === "lines");
+  if (menu === "play" && (value === "manual" || value === "autoplay")) setPlayMode(value);
+  if (menu === "scale" && (value === "0.5x" || value === "1x" || value === "2x")) setGridScalePreset(value);
+  closeMobileMenu();
 });
 
-btnLinesOff?.addEventListener("click", () => {
-  btnLinesOff.classList.add("is-active");
-  btnLinesOn?.classList.remove("is-active");
-  btnLinesOff.setAttribute("aria-pressed", "true");
-  btnLinesOn?.setAttribute("aria-pressed", "false");
-  positionPillThumb(linesPill, btnLinesOff);
-  setLines(false);
+document.addEventListener("pointerdown", (ev) => {
+  const target = ev.target as HTMLElement | null;
+  if (target?.closest?.("#hud")) return;
+  closeMobileMenu();
 });
 
 positionPillThumb(modePill, btnOrder ?? btnChaos ?? null, true);
 positionPillThumb(linesPill, btnLinesOn ?? btnLinesOff ?? null, true);
 positionPillThumb(playPill, btnPlayManual ?? btnPlayAutoplay ?? null, true);
 positionPillThumb(scalePill, btnGridScale1x ?? btnGridScale05x ?? btnGridScale2x ?? null, true);
+setLinesMode(true);
+syncMobileHudState();
 
 // Render loop
 function tick() {
@@ -1273,8 +1486,9 @@ tick();
 
 // Resize
 window.addEventListener("resize", () => {
-  const w = app.clientWidth;
-  const h = app.clientHeight;
+  syncMobileHudReserve();
+  if (!isMobileHudMode()) closeMobileMenu();
+  const { width: w, height: h } = getViewportSize();
 
   renderer.setPixelRatio(getRenderPixelRatio());
   renderer.setSize(w, h);
@@ -1307,4 +1521,5 @@ window.addEventListener("resize", () => {
         : btnGridScale2x ?? null,
     true
   );
+  syncMobileHudState();
 });
