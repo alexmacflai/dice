@@ -317,7 +317,7 @@ const GRID_LAYOUT_CONFIG: GridLayoutConfig = {
 const AUTOPLAY_BPM_DEFAULT = 64;
 const AUTOPLAY_BAR_BEATS = 4;
 // Autoplay divisions
-const AUTOPLAY_RHYTHM_MULTIPLIERS = [4, 2, 1, 0.5, 0.5, 0.5, 0.5, 0.25, 0.25, 0.125, 0.125, 0.0625] as const;
+const AUTOPLAY_RHYTHM_MULTIPLIERS = [4, 2, 1, 1, 0.5, 0.5, 0.5, 0.5, 0.25, 0.25, 0.25, 0.25, 0.125, 0.125, 0.0625] as const;
 const getRenderPixelRatio = () => Math.min(window.devicePixelRatio, MAX_PIXEL_RATIO);
 
 const blurRenderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
