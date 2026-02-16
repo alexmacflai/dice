@@ -23,6 +23,15 @@ type DieResources = {
   faceQuat: Record<Face, THREE.Quaternion>;
 };
 
+const DIE_COLOR = 0xfff6ff;
+const EDGE_DEDUPE_EPSILON = 1e-6;
+const EDGE_SCALE = 1.0005;
+const OCCLUDER_POLYGON_OFFSET = 1;
+const PIP_RADIUS_RATIO = 0.064;
+const PIP_LIFT_RATIO = 0.01;
+const PIP_INSET_RATIO = 0.24;
+const PIP_SEGMENTS = 14;
+
 const RESOURCE_CACHE = new Map<string, DieResources>();
 const UP_AXIS = new THREE.Vector3(0, 0, 1);
 const FACE_NORMAL: Record<Face, THREE.Vector3> = {
@@ -37,13 +46,11 @@ const FACE_NORMAL: Record<Face, THREE.Vector3> = {
 function buildResources(size: number, lineWidthPx: number): DieResources {
   const boxGeo = new THREE.BoxGeometry(size, size, size);
 
-  // Edges (thick lines). Note: WebGL ignores LineBasicMaterial.linewidth in most browsers.
+  // Shared die geometry/material resources.
   const edges = new THREE.EdgesGeometry(boxGeo);
   const positions = edges.attributes.position.array as ArrayLike<number>;
 
-  // Dedupe segments to avoid double-thick seams.
-  const EPS = 1e-6;
-  const q = (n: number) => Math.round(n / EPS);
+  const q = (n: number) => Math.round(n / EDGE_DEDUPE_EPSILON);
   const keyForPoint = (x: number, y: number, z: number) => `${q(x)},${q(y)},${q(z)}`;
   const keyForSegment = (ax: number, ay: number, az: number, bx: number, by: number, bz: number) => {
     const a = keyForPoint(ax, ay, az);
@@ -69,41 +76,33 @@ function buildResources(size: number, lineWidthPx: number): DieResources {
   const lineGeom = new LineSegmentsGeometry();
   lineGeom.setPositions(deduped);
   const lineMat = new LineMaterial({
-    color: 0xfff6ff,
-    linewidth: lineWidthPx, // in pixels
+    color: DIE_COLOR,
+    linewidth: lineWidthPx,
     depthTest: true,
     depthWrite: false,
   });
 
-  // LineMaterial needs a resolution to compute pixel linewidth.
-  // We set an initial value here. Update on resize in main.ts.
   lineMat.resolution.set(window.innerWidth, window.innerHeight);
 
-  // Invisible occluder (depth-only)
   const occluderMat = new THREE.MeshBasicMaterial({ color: 0x000000 });
   occluderMat.colorWrite = false;
   occluderMat.depthWrite = true;
   occluderMat.depthTest = true;
-  // Push the occluder slightly back in depth to avoid thick-line quads being partially clipped.
   occluderMat.polygonOffset = true;
-  occluderMat.polygonOffsetFactor = 1;
-  occluderMat.polygonOffsetUnits = 1;
+  occluderMat.polygonOffsetFactor = OCCLUDER_POLYGON_OFFSET;
+  occluderMat.polygonOffsetUnits = OCCLUDER_POLYGON_OFFSET;
 
-  // Pips
   const pipMat = new THREE.MeshBasicMaterial({
-    color: 0xfff6ff,
+    color: DIE_COLOR,
     depthTest: true,
-    depthWrite: false, // prevent z-fighting with the occluder
+    depthWrite: false,
   });
-  const pipRadius = size * 0.064; // scales with die size
-  const pipGeo = new THREE.CircleGeometry(pipRadius, 14);
+  const pipRadius = size * PIP_RADIUS_RATIO;
+  const pipGeo = new THREE.CircleGeometry(pipRadius, PIP_SEGMENTS);
 
-  // Pip layout (all derived from `size`)
-  const pipLift = size * 0.01; // Tune: lift pips slightly above die faces to prevent z-fighting. --- IGNORE ---
-  const faceZ = size / 2 + pipLift; // Z position for pips on the front face. Back face is -faceZ.
-  const pipInset = size * 0.24; // Pull pips away from edges so thicker lines don’t collide visually.
-
-  // Signed distance used for left/right/up/down pip positions.
+  const pipLift = size * PIP_LIFT_RATIO;
+  const faceZ = size / 2 + pipLift;
+  const pipInset = size * PIP_INSET_RATIO;
   const d = size / 2 - pipInset;
   const offset = faceZ;
 
@@ -145,7 +144,7 @@ export function createDie(size = 1.5, lineWidthPx = 1): THREE.Group {
   const edgeLines = new LineSegments2(resources.lineGeom, resources.lineMat);
   edgeLines.computeLineDistances();
   edgeLines.renderOrder = 1;
-  edgeLines.scale.setScalar(1.0005);
+  edgeLines.scale.setScalar(EDGE_SCALE);
   die.add(edgeLines);
 
   const occluder = new THREE.Mesh(resources.boxGeo, resources.occluderMat);

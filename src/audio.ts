@@ -1,16 +1,5 @@
 export type MusicMode = "soft" | "crisp" | "manic";
 export type MusicSelection = MusicMode | "mute";
-export type RotationMode = "order" | "chaos";
-export type PlayMode = "manual" | "autoplay";
-
-export type OriginNoteEvent = {
-  timeMs: number;
-  row: number;
-  col: number;
-  dieId: string;
-  rotationMode: RotationMode;
-  playMode: PlayMode;
-};
 
 export type MusicEngineOptions = {
   initialSelection: MusicSelection;
@@ -31,8 +20,6 @@ type ModeProfile = {
   filterFreqHz: number;
   filterQ: number;
   voiceGain: number;
-  // Normal delay sync unit expressed in beats (numerator/denominator).
-  // Example: 3/2 = dotted quarter, 3/8 = dotted eighth.
   delaySyncNumerator: number;
   delaySyncDenominator: number;
   delayWet: number;
@@ -61,8 +48,6 @@ type ModeProfile = {
 const MAJOR = [0, 2, 4, 5, 7, 9, 11];
 const NATURAL_MINOR = [0, 2, 3, 5, 7, 8, 10];
 const PHRYGIAN = [0, 1, 3, 5, 7, 8, 10];
-// Weights align by index to each mode's scaleSemitones array.
-// Stronger hierarchy: high-priority tones dominate, low-priority tones are rare.
 const SOFT_DEGREE_WEIGHTS = [0.34, 0.05, 0.2, 0.12, 0.22, 0.05, 0.02];
 const CRISP_DEGREE_WEIGHTS = [0.34, 0.05, 0.2, 0.12, 0.22, 0.05, 0.02];
 const MANIC_DEGREE_WEIGHTS = [0.3, 0.08, 0.22, 0.1, 0.2, 0.06, 0.04];
@@ -413,14 +398,12 @@ export class MusicEngine {
     return MODE_PROFILES[this.selection].bpm;
   }
 
-  triggerOriginNote(event: OriginNoteEvent) {
+  triggerOriginNote() {
     if (this.selection === "mute") return;
     if (this.audioCtx.state !== "running") {
       void this.resumeIfNeeded()
-        .then(() => this.triggerOriginNote(event))
-        .catch(() => {
-          // Browser gesture policies may block resume until user interaction.
-        });
+        .then(() => this.triggerOriginNote())
+        .catch(() => {});
       return;
     }
 
@@ -534,7 +517,6 @@ export class MusicEngine {
       mod.frequency.setValueAtTime(Math.max(1, freq * 1.5), now);
       modGain.gain.setValueAtTime(freq * 0.33, now);
 
-      // Subtle pitch oscillation.
       const vibratoHz = lerp(4, 16, this.rippleIntensityCurrent);
       const vibratoDepth = lerp(0.0005, 0.0025, this.rippleIntensityCurrent);
       vibrato.frequency.setValueAtTime(vibratoHz, now);
