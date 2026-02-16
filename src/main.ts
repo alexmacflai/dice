@@ -379,6 +379,11 @@ let blurActiveDieId: string | null = null;
 let blurPendingDieId: string | null = null;
 let blurCurrentPx = 0;
 let blurTargetPx = 0;
+let blurVisibleDieId: string | null = null;
+let gridStartCenterX = 0;
+let gridStartCenterY = 0;
+const hoverInfluencedIds = new Set<string>();
+let highlightedDieId: string | null = null;
 
 // Removed ISO_BASE_EULER and ISO_BASE_QUAT per instructions
 type RotationMode = "order" | "chaos";
@@ -499,6 +504,7 @@ const raycaster = new THREE.Raycaster();
 const animById = new Map<string, DieAnimState>();
 const blurGroupById = new Map<string, THREE.Group>();
 const persistedDieStateById = new Map<string, PersistedDieState>();
+const tempEventQuat = new THREE.Quaternion();
 
 function durationForAngleMs(angleRad: number, msPer90: number) {
   const steps = Math.max(1, Math.round(Math.abs(angleRad) / (Math.PI / 2)));
@@ -790,6 +796,12 @@ function reconcileDicePool(targetRows: number, targetCols: number) {
   if (blurPendingDieId && !diceById.has(blurPendingDieId)) {
     blurPendingDieId = null;
   }
+  if (blurVisibleDieId && !diceById.has(blurVisibleDieId)) {
+    blurVisibleDieId = null;
+  }
+  if (highlightedDieId && !diceById.has(highlightedDieId)) {
+    highlightedDieId = null;
+  }
 
   if (playMode === "autoplay") {
     setHighlight(null);
@@ -802,6 +814,8 @@ function applyGridPositions(layout: GridLayout) {
     currentStepXWorld = BASE_DIE_SIZE;
     currentStepYWorld = BASE_DIE_SIZE;
     currentBaseDieScale = 1;
+    gridStartCenterX = 0;
+    gridStartCenterY = 0;
     return;
   }
 
@@ -811,6 +825,8 @@ function applyGridPositions(layout: GridLayout) {
     camera.left + (safePadPx + layout.offsetXPx + hoverFootprintPx / 2) * layout.worldUnitsPerPx;
   const startCenterY =
     camera.top - (safePadPx + layout.offsetYPx + hoverFootprintPx / 2) * layout.worldUnitsPerPx;
+  gridStartCenterX = startCenterX;
+  gridStartCenterY = startCenterY;
 
   currentStepXWorld = layout.stepXPx * layout.worldUnitsPerPx;
   currentStepYWorld = layout.stepYPx * layout.worldUnitsPerPx;
@@ -837,10 +853,13 @@ function relayoutToViewport(w: number, h: number) {
 }
 
 function syncLineMaterialResolution(width: number, height: number) {
+  const seen = new Set<any>();
   for (const d of dice) {
     d.group.traverse((obj: any) => {
       const mat: any = (obj as any).material;
       if (!mat || typeof mat.linewidth !== "number" || !mat.resolution) return;
+      if (seen.has(mat)) return;
+      seen.add(mat);
       mat.resolution.set(width, height);
     });
   }
@@ -848,6 +867,8 @@ function syncLineMaterialResolution(width: number, height: number) {
     blurGroup.traverse((obj: any) => {
       const mat: any = (obj as any).material;
       if (!mat || typeof mat.linewidth !== "number" || !mat.resolution) return;
+      if (seen.has(mat)) return;
+      seen.add(mat);
       mat.resolution.set(width, height);
     });
   }
@@ -939,24 +960,60 @@ function computeHoverTargetScaleFromPointer(candidate: Die, pointerWorld: THREE.
   return 1 + (HOVER_MAX_SCALE - 1) * falloff;
 }
 
+function setHoverTargetForDieId(id: string, targetScale: number) {
+  const d = diceById.get(id);
+  if (!d) return;
+  setDieHoverTargetScale(ensureAnimState(d), targetScale);
+}
+
 function applyHoverTargets(pointerWorld: THREE.Vector3 | null) {
-  primaryHoveredDieId = null;
-  let nearestDistSq = Number.POSITIVE_INFINITY;
+  if (!pointerWorld) {
+    for (const id of hoverInfluencedIds) {
+      setHoverTargetForDieId(id, 1);
+    }
+    hoverInfluencedIds.clear();
+    primaryHoveredDieId = null;
+    blurPendingDieId = null;
+    blurTargetPx = 0;
+    return;
+  }
 
-  for (const d of dice) {
-    const st = ensureAnimState(d);
-    const targetScale = pointerWorld ? computeHoverTargetScaleFromPointer(d, pointerWorld) : 1;
-    setDieHoverTargetScale(st, targetScale);
+  const newInfluencedIds = new Set<string>();
+  const stepX = Math.max(1e-6, currentStepXWorld);
+  const stepY = Math.max(1e-6, currentStepYWorld);
+  const colCenter = (pointerWorld.x - gridStartCenterX) / stepX;
+  const rowCenter = (gridStartCenterY - pointerWorld.y) / stepY;
+  const radius = HOVER_FALLOFF_DISTANCE_STEPS + 1;
+  const rowMin = Math.max(0, Math.floor(rowCenter - radius));
+  const rowMax = Math.min(currentLayout.rows - 1, Math.ceil(rowCenter + radius));
+  const colMin = Math.max(0, Math.floor(colCenter - radius));
+  const colMax = Math.min(currentLayout.cols - 1, Math.ceil(colCenter + radius));
 
-    if (!pointerWorld) continue;
-    const dx = d.group.position.x - pointerWorld.x;
-    const dy = d.group.position.y - pointerWorld.y;
-    const distSq = dx * dx + dy * dy;
-    if (distSq < nearestDistSq) {
-      nearestDistSq = distSq;
-      primaryHoveredDieId = d.id;
+  for (let r = rowMin; r <= rowMax; r++) {
+    for (let c = colMin; c <= colMax; c++) {
+      const id = `${r}-${c}`;
+      const d = diceById.get(id);
+      if (!d) continue;
+      const targetScale = computeHoverTargetScaleFromPointer(d, pointerWorld);
+      if (targetScale > 1) {
+        newInfluencedIds.add(id);
+      }
+      setDieHoverTargetScale(ensureAnimState(d), targetScale);
     }
   }
+
+  for (const id of hoverInfluencedIds) {
+    if (!newInfluencedIds.has(id)) {
+      setHoverTargetForDieId(id, 1);
+    }
+  }
+  hoverInfluencedIds.clear();
+  for (const id of newInfluencedIds) hoverInfluencedIds.add(id);
+
+  const nearestRow = THREE.MathUtils.clamp(Math.round(rowCenter), 0, Math.max(0, currentLayout.rows - 1));
+  const nearestCol = THREE.MathUtils.clamp(Math.round(colCenter), 0, Math.max(0, currentLayout.cols - 1));
+  const nearestId = `${nearestRow}-${nearestCol}`;
+  primaryHoveredDieId = diceById.has(nearestId) ? nearestId : null;
 
   if (!primaryHoveredDieId) {
     blurPendingDieId = null;
@@ -984,21 +1041,29 @@ function applyHoverTargets(pointerWorld: THREE.Vector3 | null) {
   blurTargetPx = 0;
 }
 
+function setDieBaseColor(id: string, color: number) {
+  const dieObj = diceById.get(id);
+  if (!dieObj) return;
+  dieObj.group.traverse((obj: any) => {
+    const mat = (obj as any).material;
+    if (!mat || !mat.color) return;
+    if (!obj.userData.__matCloned) {
+      (obj as any).material = mat.clone();
+      obj.userData.__matCloned = true;
+    }
+    ((obj as any).material as any).color.set(color);
+  });
+}
+
 function setHighlight(dieId: string | null) {
-  for (const d of dice) {
-    const isSelected = dieId === d.id;
-    d.group.traverse((obj: any) => {
-      // Only affects materials that have a `color` (lines + pips)
-      const mat = (obj as any).material;
-      if (!mat || !mat.color) return;
-      // If this material is shared across dice, clone it once per object
-      if (!obj.userData.__matCloned) {
-        (obj as any).material = mat.clone();
-        obj.userData.__matCloned = true;
-      }
-      ((obj as any).material as any).color.set(isSelected ? HIGHLIGHT_COLOR : BASE_DIE_COLOR);
-    });
+  if (dieId === highlightedDieId) return;
+  if (highlightedDieId) {
+    setDieBaseColor(highlightedDieId, BASE_DIE_COLOR);
   }
+  if (dieId) {
+    setDieBaseColor(dieId, HIGHLIGHT_COLOR);
+  }
+  highlightedDieId = dieId;
 }
 
 function getDieIdFromPointer(ev: PointerEvent) {
@@ -1510,6 +1575,18 @@ setGridScalePreset(currentGridScalePreset, { persist: false });
 setMusicSelection(musicSelection);
 syncMobileHudState();
 
+let didMarkAppReady = false;
+function markAppReady() {
+  if (didMarkAppReady) return;
+  didMarkAppReady = true;
+  document.body.classList.add("app-ready");
+  document.body.classList.remove("app-booting");
+  const splash = document.querySelector<HTMLDivElement>("#boot-splash");
+  if (splash) {
+    window.setTimeout(() => splash.remove(), 260);
+  }
+}
+
 // Render loop
 function tick() {
 
@@ -1560,9 +1637,6 @@ function tick() {
 
     let spinScale = 1;
     if (st.events.length) {
-      // Stable deterministic order so results are consistent
-      st.events.sort((a, b) => a.id - b.id);
-
       // 2) Apply all active events simultaneously (per-frame delta)
       for (let i = st.events.length - 1; i >= 0; i--) {
         const ev = st.events[i];
@@ -1587,7 +1661,7 @@ function tick() {
 
         if (Math.abs(deltaE) > 1e-8) {
           const dAngle = ev.angleRad * deltaE;
-          const dq = new THREE.Quaternion().setFromAxisAngle(ev.axisWorld, dAngle);
+          const dq = tempEventQuat.setFromAxisAngle(ev.axisWorld, dAngle);
           // WORLD rotation => pre-multiply
           d.group.quaternion.premultiply(dq);
         }
@@ -1601,7 +1675,7 @@ function tick() {
     // Order mode: continuously steer toward nearest valid face orientation
     // during rolling so landings are naturally aligned without a final snap.
     if (rotationMode === "order") {
-      const targetSnapQuat = d.group.quaternion.clone();
+      const targetSnapQuat = st.orderSnapTo.copy(d.group.quaternion);
       snapQuatToOrtho90(targetSnapQuat);
       const settleTauMs =
         st.events.length > 0 ? 260 : st.triggers.length > 0 ? 170 : 85;
@@ -1622,13 +1696,6 @@ function tick() {
 
     // Hover and spin scales are additive by composition (multiplied), so neither cancels the other.
     d.group.scale.setScalar(currentBaseDieScale * st.hoverCurrentScale * spinScale);
-
-    const blurGroup = blurGroupById.get(d.id);
-    if (blurGroup) {
-      blurGroup.visible = d.id === blurActiveDieId;
-      blurGroup.quaternion.copy(d.group.quaternion);
-      blurGroup.scale.copy(d.group.scale);
-    }
     if (st.events.length > 0) {
       activeSpinningDiceCount++;
     }
@@ -1662,8 +1729,33 @@ function tick() {
     blurActiveDieId = null;
   }
 
-  blurRenderer.render(blurScene, camera);
+  if (blurVisibleDieId !== blurActiveDieId) {
+    if (blurVisibleDieId) {
+      const prev = blurGroupById.get(blurVisibleDieId);
+      if (prev) prev.visible = false;
+    }
+    if (blurActiveDieId) {
+      const next = blurGroupById.get(blurActiveDieId);
+      if (next) next.visible = true;
+    }
+    blurVisibleDieId = blurActiveDieId;
+  }
+
+  if (blurActiveDieId) {
+    const activeDie = diceById.get(blurActiveDieId);
+    const activeBlurGroup = blurGroupById.get(blurActiveDieId);
+    if (activeDie && activeBlurGroup) {
+      activeBlurGroup.quaternion.copy(activeDie.group.quaternion);
+      activeBlurGroup.scale.copy(activeDie.group.scale);
+    }
+  }
+
+  const shouldRenderBlur = blurCurrentPx > 0.05 || blurTargetPx > 0.05;
+  if (shouldRenderBlur) {
+    blurRenderer.render(blurScene, camera);
+  }
   renderer.render(scene, camera);
+  markAppReady();
   requestAnimationFrame(tick);
 }
 let lastTickMs = performance.now();

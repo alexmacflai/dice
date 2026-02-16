@@ -10,9 +10,31 @@ export type Die = {
   col: number;
 };
 
-export function createDie(size = 1.5, lineWidthPx = 1): THREE.Group {
-  const die = new THREE.Group();
+type Face = "front" | "back" | "right" | "left" | "top" | "bottom";
+type PipSpec = { face: Face; x: number; y: number; z: number };
+type DieResources = {
+  boxGeo: THREE.BoxGeometry;
+  lineGeom: LineSegmentsGeometry;
+  lineMat: LineMaterial;
+  occluderMat: THREE.MeshBasicMaterial;
+  pipGeo: THREE.CircleGeometry;
+  pipMat: THREE.MeshBasicMaterial;
+  pips: PipSpec[];
+  faceQuat: Record<Face, THREE.Quaternion>;
+};
 
+const RESOURCE_CACHE = new Map<string, DieResources>();
+const UP_AXIS = new THREE.Vector3(0, 0, 1);
+const FACE_NORMAL: Record<Face, THREE.Vector3> = {
+  front: new THREE.Vector3(0, 0, 1),
+  back: new THREE.Vector3(0, 0, -1),
+  right: new THREE.Vector3(1, 0, 0),
+  left: new THREE.Vector3(-1, 0, 0),
+  top: new THREE.Vector3(0, 1, 0),
+  bottom: new THREE.Vector3(0, -1, 0),
+};
+
+function buildResources(size: number, lineWidthPx: number): DieResources {
   const boxGeo = new THREE.BoxGeometry(size, size, size);
 
   // Edges (thick lines). Note: WebGL ignores LineBasicMaterial.linewidth in most browsers.
@@ -22,20 +44,14 @@ export function createDie(size = 1.5, lineWidthPx = 1): THREE.Group {
   // Dedupe segments to avoid double-thick seams.
   const EPS = 1e-6;
   const q = (n: number) => Math.round(n / EPS);
-
   const keyForPoint = (x: number, y: number, z: number) => `${q(x)},${q(y)},${q(z)}`;
-  const keyForSegment = (
-    ax: number, ay: number, az: number,
-    bx: number, by: number, bz: number
-  ) => {
+  const keyForSegment = (ax: number, ay: number, az: number, bx: number, by: number, bz: number) => {
     const a = keyForPoint(ax, ay, az);
     const b = keyForPoint(bx, by, bz);
     return a < b ? `${a}|${b}` : `${b}|${a}`;
   };
-
   const deduped: number[] = [];
   const seen = new Set<string>();
-
   for (let i = 0; i < positions.length; i += 6) {
     const ax = positions[i + 0];
     const ay = positions[i + 1];
@@ -50,10 +66,8 @@ export function createDie(size = 1.5, lineWidthPx = 1): THREE.Group {
 
     deduped.push(ax, ay, az, bx, by, bz);
   }
-
   const lineGeom = new LineSegmentsGeometry();
   lineGeom.setPositions(deduped);
-
   const lineMat = new LineMaterial({
     color: 0xfff6ff,
     linewidth: lineWidthPx, // in pixels
@@ -65,13 +79,6 @@ export function createDie(size = 1.5, lineWidthPx = 1): THREE.Group {
   // We set an initial value here. Update on resize in main.ts.
   lineMat.resolution.set(window.innerWidth, window.innerHeight);
 
-  const edgeLines = new LineSegments2(lineGeom, lineMat);
-  edgeLines.computeLineDistances();
-  edgeLines.renderOrder = 1;
-  // Nudge the line mesh slightly outward so it consistently sits in front of the occluder depth.
-  edgeLines.scale.setScalar(1.0005);
-  die.add(edgeLines);
-
   // Invisible occluder (depth-only)
   const occluderMat = new THREE.MeshBasicMaterial({ color: 0x000000 });
   occluderMat.colorWrite = false;
@@ -81,9 +88,6 @@ export function createDie(size = 1.5, lineWidthPx = 1): THREE.Group {
   occluderMat.polygonOffset = true;
   occluderMat.polygonOffsetFactor = 1;
   occluderMat.polygonOffsetUnits = 1;
-  const occluder = new THREE.Mesh(boxGeo, occluderMat);
-  occluder.renderOrder = -10;
-  die.add(occluder);
 
   // Pips
   const pipMat = new THREE.MeshBasicMaterial({
@@ -101,45 +105,65 @@ export function createDie(size = 1.5, lineWidthPx = 1): THREE.Group {
 
   // Signed distance used for left/right/up/down pip positions.
   const d = size / 2 - pipInset;
-
-  // For readability: this is the signed distance used for left/right/up/down pip positions.
   const offset = faceZ;
 
-  type Face = "front" | "back" | "right" | "left" | "top" | "bottom";
+  const faceQuat = {
+    front: new THREE.Quaternion().setFromUnitVectors(UP_AXIS, FACE_NORMAL.front),
+    back: new THREE.Quaternion().setFromUnitVectors(UP_AXIS, FACE_NORMAL.back),
+    right: new THREE.Quaternion().setFromUnitVectors(UP_AXIS, FACE_NORMAL.right),
+    left: new THREE.Quaternion().setFromUnitVectors(UP_AXIS, FACE_NORMAL.left),
+    top: new THREE.Quaternion().setFromUnitVectors(UP_AXIS, FACE_NORMAL.top),
+    bottom: new THREE.Quaternion().setFromUnitVectors(UP_AXIS, FACE_NORMAL.bottom),
+  } satisfies Record<Face, THREE.Quaternion>;
 
-  const faceNormal = (face: Face) => {
-    switch (face) {
-      case "front": return new THREE.Vector3(0, 0, 1);
-      case "back": return new THREE.Vector3(0, 0, -1);
-      case "right": return new THREE.Vector3(1, 0, 0);
-      case "left": return new THREE.Vector3(-1, 0, 0);
-      case "top": return new THREE.Vector3(0, 1, 0);
-      case "bottom": return new THREE.Vector3(0, -1, 0);
-    }
-  };
+  const pips: PipSpec[] = [
+    { face: "front", x: 0, y: 0, z: offset },
+    { face: "right", x: offset, y: -d, z: d }, { face: "right", x: offset, y: d, z: -d },
+    { face: "top", x: -d, y: offset, z: d }, { face: "top", x: 0, y: offset, z: 0 }, { face: "top", x: d, y: offset, z: -d },
+    { face: "bottom", x: -d, y: -offset, z: d }, { face: "bottom", x: -d, y: -offset, z: -d }, { face: "bottom", x: d, y: -offset, z: d }, { face: "bottom", x: d, y: -offset, z: -d },
+    { face: "left", x: -offset, y: -d, z: d }, { face: "left", x: -offset, y: -d, z: -d }, { face: "left", x: -offset, y: d, z: d }, { face: "left", x: -offset, y: d, z: -d }, { face: "left", x: -offset, y: 0, z: 0 },
+    { face: "back", x: -d, y: d, z: -offset }, { face: "back", x: d, y: d, z: -offset }, { face: "back", x: -d, y: -d, z: -offset }, { face: "back", x: d, y: -d, z: -offset }, { face: "back", x: -d, y: 0, z: -offset }, { face: "back", x: d, y: 0, z: -offset },
+  ];
 
-  // CircleGeometry is in the XY plane facing +Z.
-  const faceQuat = (face: Face) => {
-    const q = new THREE.Quaternion();
-    q.setFromUnitVectors(new THREE.Vector3(0, 0, 1), faceNormal(face));
-    return q;
-  };
+  return { boxGeo, lineGeom, lineMat, occluderMat, pipGeo, pipMat, pips, faceQuat };
+}
 
-  const addPip = (face: Face, x: number, y: number, z: number) => {
-    const pip = new THREE.Mesh(pipGeo, pipMat);
-    pip.position.set(x, y, z);
-    pip.quaternion.copy(faceQuat(face));
-    pip.renderOrder = 1;
-    die.add(pip);
-  };
+function getResources(size: number, lineWidthPx: number) {
+  const key = `${size}:${lineWidthPx}`;
+  let resources = RESOURCE_CACHE.get(key);
+  if (!resources) {
+    resources = buildResources(size, lineWidthPx);
+    RESOURCE_CACHE.set(key, resources);
+  }
+  return resources;
+}
 
-  // Same layout you already have:
-  addPip("front", 0, 0, offset); // front = 1
-  addPip("right", offset, -d, d); addPip("right", offset, d, -d); // right = 2
-  addPip("top", -d, offset, d); addPip("top", 0, offset, 0); addPip("top", d, offset, -d); // top = 3
-  addPip("bottom", -d, -offset, d); addPip("bottom", -d, -offset, -d); addPip("bottom", d, -offset, d); addPip("bottom", d, -offset, -d); // bottom = 4
-  addPip("left", -offset, -d, d); addPip("left", -offset, -d, -d); addPip("left", -offset, d, d); addPip("left", -offset, d, -d); addPip("left", -offset, 0, 0); // left = 5
-  addPip("back", -d, d, -offset); addPip("back", d, d, -offset); addPip("back", -d, -d, -offset); addPip("back", d, -d, -offset); addPip("back", -d, 0, -offset); addPip("back", d, 0, -offset); // back = 6
+export function createDie(size = 1.5, lineWidthPx = 1): THREE.Group {
+  const die = new THREE.Group();
+  const resources = getResources(size, lineWidthPx);
+
+  const edgeLines = new LineSegments2(resources.lineGeom, resources.lineMat);
+  edgeLines.computeLineDistances();
+  edgeLines.renderOrder = 1;
+  edgeLines.scale.setScalar(1.0005);
+  die.add(edgeLines);
+
+  const occluder = new THREE.Mesh(resources.boxGeo, resources.occluderMat);
+  occluder.renderOrder = -10;
+  die.add(occluder);
+
+  const pipInstances = new THREE.InstancedMesh(resources.pipGeo, resources.pipMat, resources.pips.length);
+  pipInstances.renderOrder = 1;
+  const tempObj = new THREE.Object3D();
+  for (let i = 0; i < resources.pips.length; i++) {
+    const pip = resources.pips[i];
+    tempObj.position.set(pip.x, pip.y, pip.z);
+    tempObj.quaternion.copy(resources.faceQuat[pip.face]);
+    tempObj.scale.set(1, 1, 1);
+    tempObj.updateMatrix();
+    pipInstances.setMatrixAt(i, tempObj.matrix);
+  }
+  die.add(pipInstances);
 
   return die;
 }

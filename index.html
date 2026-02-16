@@ -4,9 +4,59 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>dice</title>
+    <style>
+      html, body {
+        margin: 0;
+        height: 100%;
+      }
+      body {
+        overflow: hidden;
+        background:
+          radial-gradient(120% 100% at 50% 50%, #4b1433 0%, #2d0a22 42%, #160313 76%, #070005 100%);
+      }
+      #app {
+        width: 100vw;
+        height: 100vh;
+        position: relative;
+      }
+      #hud {
+        opacity: 0;
+        visibility: hidden;
+      }
+      #boot-splash {
+        position: fixed;
+        inset: 0;
+        z-index: 10000;
+        display: grid;
+        place-items: center;
+        background:
+          radial-gradient(120% 100% at 50% 50%, #4b1433 0%, #2d0a22 42%, #160313 76%, #070005 100%);
+        color: rgba(255, 236, 249, 0.6);
+        pointer-events: none;
+        transition: opacity 220ms ease, visibility 220ms ease;
+      }
+      .boot-card {
+        padding: 10px 14px;
+        font: 400 16px/1 system-ui,-apple-system,Segoe UI,Roboto,Helvetica,Arial,sans-serif;
+        text-shadow: 0 8px 24px rgba(0, 0, 0, 0.5), 0 0 14px rgba(255, 132, 204, 1);
+        letter-spacing: .08em;
+        text-transform: lowercase;
+      }
+      body.app-ready #hud {
+        opacity: 1;
+        visibility: visible;
+      }
+      body.app-ready #boot-splash {
+        opacity: 0;
+        visibility: hidden;
+      }
+    </style>
   </head>
-  <body>
+  <body class="app-booting">
     <div id="app"></div>
+    <div id="boot-splash" aria-hidden="true">
+      <div class="boot-card">Loading...</div>
+    </div>
 
     <div id="hud" aria-label="controls">
       <div class="hud-bar">
