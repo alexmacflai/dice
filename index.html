@@ -10,6 +10,12 @@
 
     <div id="hud" aria-label="controls">
       <div class="hud-bar">
+        <div class="hud-pill" role="group" aria-label="grid scale">
+          <button id="grid-scale-05x" class="hud-btn" type="button" aria-pressed="false">0.5x</button>
+          <button id="grid-scale-1x" class="hud-btn is-active" type="button" aria-pressed="true">1x</button>
+          <button id="grid-scale-2x" class="hud-btn" type="button" aria-pressed="false">2x</button>
+        </div>
+
         <div class="hud-pill" role="group" aria-label="rotation mode">
           <button id="mode-order" class="hud-btn is-active" type="button" aria-pressed="true">order</button>
           <button id="mode-chaos" class="hud-btn" type="button" aria-pressed="false">chaos</button>
@@ -25,10 +31,11 @@
           <button id="play-autoplay" class="hud-btn" type="button" aria-pressed="false">autoplay</button>
         </div>
 
-        <div class="hud-pill" role="group" aria-label="grid scale">
-          <button id="grid-scale-05x" class="hud-btn" type="button" aria-pressed="false">0.5x</button>
-          <button id="grid-scale-1x" class="hud-btn is-active" type="button" aria-pressed="true">1x</button>
-          <button id="grid-scale-2x" class="hud-btn" type="button" aria-pressed="false">2x</button>
+        <div class="hud-pill" role="group" aria-label="music mode">
+          <button id="music-soft" class="hud-btn is-active" type="button" aria-pressed="true">soft</button>
+          <button id="music-crisp" class="hud-btn" type="button" aria-pressed="false">crisp</button>
+          <button id="music-weird" class="hud-btn" type="button" aria-pressed="false">weird</button>
+          <button id="music-mute" class="hud-btn" type="button" aria-pressed="false">mute</button>
         </div>
       </div>
     </div>
