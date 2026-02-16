@@ -1,4 +1,4 @@
-export type MusicMode = "soft" | "crisp" | "weird";
+export type MusicMode = "soft" | "crisp" | "manic";
 export type MusicSelection = MusicMode | "mute";
 export type RotationMode = "order" | "chaos";
 export type PlayMode = "manual" | "autoplay";
@@ -31,10 +31,14 @@ type ModeProfile = {
   filterFreqHz: number;
   filterQ: number;
   voiceGain: number;
-  delayBeats: number;
+  // Normal delay sync unit expressed in beats (numerator/denominator).
+  // Example: 3/2 = dotted quarter, 3/8 = dotted eighth.
+  delaySyncNumerator: number;
+  delaySyncDenominator: number;
   delayWet: number;
   reverbWetMin: number;
   reverbWetMax: number;
+  reverbLengthSec: number;
   delayFeedbackMin: number;
   delayFeedbackMax: number;
   preFlangerDepthMin: number;
@@ -61,28 +65,30 @@ const PHRYGIAN = [0, 1, 3, 5, 7, 8, 10];
 // Stronger hierarchy: high-priority tones dominate, low-priority tones are rare.
 const SOFT_DEGREE_WEIGHTS = [0.34, 0.05, 0.2, 0.12, 0.22, 0.05, 0.02];
 const CRISP_DEGREE_WEIGHTS = [0.34, 0.05, 0.2, 0.12, 0.22, 0.05, 0.02];
-const WEIRD_DEGREE_WEIGHTS = [0.3, 0.08, 0.22, 0.1, 0.2, 0.06, 0.04];
+const MANIC_DEGREE_WEIGHTS = [0.3, 0.08, 0.22, 0.1, 0.2, 0.06, 0.04];
 
 const MODE_PROFILES: Record<MusicMode, ModeProfile> = {
   soft: {
     bpm: 64,
     scaleSemitones: MAJOR,
     degreeWeights: SOFT_DEGREE_WEIGHTS,
-    baseMidi: 60,
-    attackSec: 0.06,
+    baseMidi: 56,
+    attackSec: 0.4,
     decaySec: 0.45,
     sustain: 0.66,
     releaseSec: 1.05,
-    holdBeats: 0.5,
+    holdBeats: 0.8,
     filterType: "lowpass",
     filterFreqHz: 1900,
     filterQ: 0.32,
     voiceGain: 0.2,
-    delayBeats: 1.5,
-    delayWet: 0.08,
+    delaySyncNumerator: 1,
+    delaySyncDenominator: 8,
+    delayWet: 0.25,
     reverbWetMin: 0.5,
     reverbWetMax: 1,
-    delayFeedbackMin: 0.08,
+    reverbLengthSec: 8.8,
+    delayFeedbackMin: 0.3,
     delayFeedbackMax: 0.6,
     preFlangerDepthMin: 0.0015,
     preFlangerDepthMax: 0.0055,
@@ -104,22 +110,24 @@ const MODE_PROFILES: Record<MusicMode, ModeProfile> = {
     bpm: 133,
     scaleSemitones: NATURAL_MINOR,
     degreeWeights: CRISP_DEGREE_WEIGHTS,
-    baseMidi: 67,
-    attackSec: 0.004,
-    decaySec: 0.05,
+    baseMidi: 82,
+    attackSec: 0.001,
+    decaySec: 0.01,
     sustain: 0.1,
-    releaseSec: 0.3,
+    releaseSec: 0.5,
     holdBeats: 0,
     filterType: "highpass",
-    filterFreqHz: 760,
-    filterQ: 0.82,
-    voiceGain: 0.3,
-    delayBeats: 0.375,
+    filterFreqHz: 450,
+    filterQ: 0.9,
+    voiceGain: 1.5,
+    delaySyncNumerator: 3,
+    delaySyncDenominator: 7,
     delayWet: 0.8,
     reverbWetMin: 0.05,
     reverbWetMax: 0.4,
-    delayFeedbackMin: 0.5,
-    delayFeedbackMax: 0.95,
+    reverbLengthSec: 4,
+    delayFeedbackMin: 0.9,
+    delayFeedbackMax: 0.4,
     preFlangerDepthMin: 0.001,
     preFlangerDepthMax: 0.003,
     preFlangerWet: 0,
@@ -129,31 +137,33 @@ const MODE_PROFILES: Record<MusicMode, ModeProfile> = {
     postFlangerWet: 0,
     postFlangerLfoHzMin: 0,
     postFlangerLfoHzMax: 0,
-    scatterBaseSec: 0.045,
-    scatterSpreadSec: 0.04,
-    scatterWetMin: 0.3,
-    scatterWetMax: 0.6,
-    scatterFeedbackMin: 0.4,
-    scatterFeedbackMax: 0.8,
+    scatterBaseSec: 0.08,
+    scatterSpreadSec: 0.05,
+    scatterWetMin: 0.65,
+    scatterWetMax: 0.2,
+    scatterFeedbackMin: 0.8,
+    scatterFeedbackMax: 0.2,
   },
-  weird: {
+  manic: {
     bpm: 101,
     scaleSemitones: PHRYGIAN,
-    degreeWeights: WEIRD_DEGREE_WEIGHTS,
-    baseMidi: 58,
+    degreeWeights: MANIC_DEGREE_WEIGHTS,
+    baseMidi: 64,
     attackSec: 0.004,
-    decaySec: 1.8,
-    sustain: 0.42,
-    releaseSec: 1.75,
-    holdBeats: 0,
+    decaySec: 2,
+    sustain: 0.2,
+    releaseSec: 2,
+    holdBeats: 4,
     filterType: "bandpass",
     filterFreqHz: 1300,
     filterQ: 1.8,
     voiceGain: 0.4,
-    delayBeats: 0.75,
+    delaySyncNumerator: 3,
+    delaySyncDenominator: 12,
     delayWet: 0.3,
     reverbWetMin: 0.16,
     reverbWetMax: 0.28,
+    reverbLengthSec: 2.4,
     delayFeedbackMin: 0,
     delayFeedbackMax: 1,
     preFlangerDepthMin: 0.1,
@@ -260,6 +270,7 @@ export class MusicEngine {
   private readonly postFlangerLfo: OscillatorNode;
 
   private selection: MusicSelection;
+  private currentReverbLengthSec = -1;
   private rippleIntensityTarget = 0;
   private rippleIntensityCurrent = 0;
   private lastTickMs = 0;
@@ -475,25 +486,34 @@ export class MusicEngine {
     } else if (mode === "crisp") {
       const oscA = this.audioCtx.createOscillator();
       const oscB = this.audioCtx.createOscillator();
+      const oscC = this.audioCtx.createOscillator();
       const oscBlendA = this.audioCtx.createGain();
       const oscBlendB = this.audioCtx.createGain();
+      const oscBlendC = this.audioCtx.createGain();
 
-      oscA.type = "sawtooth";
-      oscB.type = "square";
+      oscA.type = "triangle";
+      oscB.type = "sine";
+      oscC.type = "sawtooth";
       oscA.frequency.setValueAtTime(freq, now);
-      oscB.frequency.setValueAtTime(freq * 2, now);
-      oscBlendA.gain.value = 0.72;
-      oscBlendB.gain.value = 0.24;
+      oscB.frequency.setValueAtTime(freq * 1.002, now);
+      oscC.frequency.setValueAtTime(freq * 2, now);
+      oscBlendA.gain.value = 0.68;
+      oscBlendB.gain.value = 0.54;
+      oscBlendC.gain.value = 0.12;
 
       oscA.connect(oscBlendA);
       oscB.connect(oscBlendB);
+      oscC.connect(oscBlendC);
       oscBlendA.connect(voiceGain);
       oscBlendB.connect(voiceGain);
+      oscBlendC.connect(voiceGain);
 
       oscA.start(now);
       oscB.start(now);
+      oscC.start(now);
       oscA.stop(stopAt);
       oscB.stop(stopAt);
+      oscC.stop(stopAt);
     } else {
       const carrier = this.audioCtx.createOscillator();
       const detuned = this.audioCtx.createOscillator();
@@ -623,8 +643,13 @@ export class MusicEngine {
     }
 
     const profile = MODE_PROFILES[selection];
+    if (Math.abs(this.currentReverbLengthSec - profile.reverbLengthSec) > 1e-6) {
+      this.convolver.buffer = createImpulseResponse(this.audioCtx, profile.reverbLengthSec);
+      this.currentReverbLengthSec = profile.reverbLengthSec;
+    }
     const beatSec = 60 / Math.max(1, profile.bpm);
-    const delaySec = beatSec * profile.delayBeats;
+    const delayBeatUnits = profile.delaySyncNumerator / Math.max(1, profile.delaySyncDenominator);
+    const delaySec = beatSec * delayBeatUnits;
 
     this.masterGain.gain.setTargetAtTime(0.62, this.audioCtx.currentTime, 0.03);
 
