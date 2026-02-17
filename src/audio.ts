@@ -12,10 +12,12 @@ type ModeProfile = {
   degreeWeights: number[];
   baseMidi: number;
   attackSec: number;
-  decaySec: number;
+  decaySecMin: number;
+  decaySecMax: number;
   sustain: number;
   releaseSec: number;
-  holdBeats: number;
+  holdBeatsMin: number;
+  holdBeatsMax: number;
   filterType: BiquadFilterType;
   filterFreqHz: number;
   filterQ: number;
@@ -59,10 +61,12 @@ const MODE_PROFILES: Record<MusicMode, ModeProfile> = {
     degreeWeights: SOFT_DEGREE_WEIGHTS,
     baseMidi: 56,
     attackSec: 0.4,
-    decaySec: 0.45,
+    decaySecMin: 0.45,
+    decaySecMax: 0.45,
     sustain: 0.66,
     releaseSec: 1.05,
-    holdBeats: 0.8,
+    holdBeatsMin: 0.8,
+    holdBeatsMax: 0.8,
     filterType: "lowpass",
     filterFreqHz: 1900,
     filterQ: 0.32,
@@ -97,14 +101,16 @@ const MODE_PROFILES: Record<MusicMode, ModeProfile> = {
     degreeWeights: CRISP_DEGREE_WEIGHTS,
     baseMidi: 82,
     attackSec: 0.001,
-    decaySec: 0.01,
+    decaySecMin: 0.25,
+    decaySecMax: 0.01,
     sustain: 0.1,
     releaseSec: 0.5,
-    holdBeats: 0,
+    holdBeatsMin: 0,
+    holdBeatsMax: 1,
     filterType: "highpass",
     filterFreqHz: 450,
     filterQ: 0.9,
-    voiceGain: 0.8,
+    voiceGain: 0.07,
     delaySyncNumerator: 3,
     delaySyncDenominator: 7,
     delayWet: 0.8,
@@ -135,12 +141,14 @@ const MODE_PROFILES: Record<MusicMode, ModeProfile> = {
     degreeWeights: MANIC_DEGREE_WEIGHTS,
     baseMidi: 64,
     attackSec: 0.004,
-    decaySec: 2,
+    decaySecMin: 2,
+    decaySecMax: 2,
     sustain: 0.2,
     releaseSec: 2,
-    holdBeats: 4,
+    holdBeatsMin: 4,
+    holdBeatsMax: 4,
     filterType: "bandpass",
-    filterFreqHz: 1300,
+    filterFreqHz: 1250,
     filterQ: 1.8,
     voiceGain: 0.4,
     delaySyncNumerator: 3,
@@ -152,14 +160,14 @@ const MODE_PROFILES: Record<MusicMode, ModeProfile> = {
     delayFeedbackMin: 0,
     delayFeedbackMax: 1,
     preFlangerDepthMin: 0.05,
-    preFlangerDepthMax: 0.25,
+    preFlangerDepthMax: 5.25,
     preFlangerWet: 0.25,
     preFlangerLfoHz: 0.5,
-    postFlangerDepthMin: 0.00025,
-    postFlangerDepthMax: 0.004,
+    postFlangerDepthMin: 0.005,
+    postFlangerDepthMax: 0.0005,
     postFlangerWet: 0.5,
-    postFlangerLfoHzMin: 10.45,
-    postFlangerLfoHzMax: 0.5,
+    postFlangerLfoHzMin: 6,
+    postFlangerLfoHzMax: 1,
     scatterBaseSec: 0,
     scatterSpreadSec: 0,
     scatterWetMin: 0,
@@ -425,11 +433,13 @@ export class MusicEngine {
     }
 
     const noteAttackSec = mode === "soft" ? lerp(0.4, 0.015, this.rippleIntensityCurrent) : profile.attackSec;
+    const noteDecaySec = lerp(profile.decaySecMin, profile.decaySecMax, this.rippleIntensityCurrent);
+    const holdBeats = lerp(profile.holdBeatsMin, profile.holdBeatsMax, this.rippleIntensityCurrent);
     const beatSec = 60 / Math.max(1, profile.bpm);
-    const holdSec = Math.max(0, beatSec * profile.holdBeats);
+    const holdSec = Math.max(0, beatSec * holdBeats);
 
     const now = this.audioCtx.currentTime + 0.001;
-    const sustainStart = now + noteAttackSec + profile.decaySec;
+    const sustainStart = now + noteAttackSec + noteDecaySec;
     const releaseStart = sustainStart + holdSec;
     const stopAt = releaseStart + profile.releaseSec + 0.05;
 
