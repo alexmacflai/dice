@@ -281,9 +281,9 @@ type PersistedSettings = {
 };
 
 const GRID_SCALE_PRESETS: Record<GridScalePreset, { minCellPx: number; maxCellPx: number }> = {
-  "0.5x": { minCellPx: 32, maxCellPx: 64 },
-  "1x": { minCellPx: 48, maxCellPx: 80 },
-  "2x": { minCellPx: 64, maxCellPx: 120 },
+  "0.5x": { minCellPx: 24, maxCellPx: 48 },
+  "1x": { minCellPx: 40, maxCellPx: 80 },
+  "2x": { minCellPx: 80, maxCellPx: 160 },
 };
 
 const SETTINGS_STORAGE_KEY = "dice.controls.v1";
