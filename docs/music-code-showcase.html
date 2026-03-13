@@ -1,0 +1,257 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Music Code Showcase</title>
+    <style>
+      :root {
+        --bg: #f6f0e8;
+        --paper: rgba(255, 251, 246, 0.94);
+        --ink: #201817;
+        --muted: #6a5a55;
+        --border: rgba(69, 46, 38, 0.16);
+        --accent: #b85c38;
+        --accent-soft: rgba(184, 92, 56, 0.12);
+        --shadow: 0 24px 80px rgba(41, 26, 23, 0.18);
+        --code-bg: #1f1a19;
+        --code-ink: #f8eee8;
+        --code-muted: #c5afa6;
+      }
+
+      * {
+        box-sizing: border-box;
+      }
+
+      body {
+        margin: 0;
+        min-height: 100vh;
+        color: var(--ink);
+        background:
+          radial-gradient(circle at top left, rgba(184, 92, 56, 0.18), transparent 34%),
+          radial-gradient(circle at top right, rgba(52, 114, 87, 0.12), transparent 30%),
+          linear-gradient(180deg, #efe6dc 0%, var(--bg) 52%, #efe8de 100%);
+        font-family: "Iowan Old Style", "Palatino Linotype", "Book Antiqua", Georgia, serif;
+      }
+
+      main {
+        width: min(1180px, calc(100vw - 40px));
+        margin: 0 auto;
+        padding: 48px 0 72px;
+      }
+
+      .hero {
+        margin-bottom: 28px;
+        padding: 28px 32px;
+        border: 1px solid var(--border);
+        border-radius: 28px;
+        background: var(--paper);
+        box-shadow: var(--shadow);
+        backdrop-filter: blur(10px);
+      }
+
+      .eyebrow {
+        margin: 0 0 10px;
+        color: var(--accent);
+        font: 700 0.78rem/1.1 "Avenir Next", "Segoe UI", sans-serif;
+        letter-spacing: 0.16em;
+        text-transform: uppercase;
+      }
+
+      h1 {
+        margin: 0;
+        font-size: clamp(2.4rem, 5vw, 4.6rem);
+        line-height: 0.96;
+        letter-spacing: -0.05em;
+      }
+
+      .intro {
+        max-width: 760px;
+        margin: 14px 0 0;
+        color: var(--muted);
+        font-size: 1.05rem;
+        line-height: 1.6;
+      }
+
+      .source {
+        display: inline-flex;
+        gap: 8px;
+        margin-top: 18px;
+        padding: 10px 14px;
+        border-radius: 999px;
+        background: var(--accent-soft);
+        color: var(--ink);
+        font: 600 0.92rem/1.1 "Avenir Next", "Segoe UI", sans-serif;
+      }
+
+      .grid {
+        display: grid;
+        gap: 20px;
+      }
+
+      .card {
+        padding: 26px;
+        border: 1px solid var(--border);
+        border-radius: 26px;
+        background: var(--paper);
+        box-shadow: var(--shadow);
+      }
+
+      .card h2 {
+        margin: 0 0 10px;
+        font-size: clamp(1.45rem, 2vw, 2rem);
+        line-height: 1.05;
+        letter-spacing: -0.03em;
+      }
+
+      .card p {
+        margin: 0 0 16px;
+        color: var(--muted);
+        font-size: 1rem;
+        line-height: 1.6;
+      }
+
+      pre {
+        margin: 0;
+        overflow-x: auto;
+        padding: 18px 20px;
+        border-radius: 18px;
+        background: var(--code-bg);
+        color: var(--code-ink);
+        box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.04);
+      }
+
+      code {
+        font-family: "SFMono-Regular", "SF Mono", Consolas, "Liberation Mono", Menlo, monospace;
+        font-size: 0.94rem;
+        line-height: 1.62;
+      }
+
+      .note {
+        margin-top: 12px;
+        color: var(--code-muted);
+        font: 500 0.88rem/1.5 "Avenir Next", "Segoe UI", sans-serif;
+      }
+
+      @media (max-width: 720px) {
+        main {
+          width: min(100vw - 24px, 1180px);
+          padding-top: 24px;
+          padding-bottom: 40px;
+        }
+
+        .hero,
+        .card {
+          padding: 20px;
+          border-radius: 20px;
+        }
+
+        pre {
+          padding: 16px;
+          border-radius: 16px;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <main>
+      <section class="hero">
+        <p class="eyebrow">Music / Portfolio Documentation</p>
+        <h1>Scales, Weighted Scales, and Octaves</h1>
+        <p class="intro">
+          This page collects the music-generation code used in the project so the core musical logic can be shown clearly
+          in documentation or captured as a clean portfolio image. The excerpts below come directly from the music engine.
+        </p>
+        <div class="source">Source: <span>src/audio.ts</span></div>
+      </section>
+
+      <section class="grid">
+        <article class="card">
+          <h2>Scales</h2>
+          <p>
+            The engine defines three pitch collections as semitone offsets from a base MIDI note. Each mode points at one
+            of these scales through its profile.
+          </p>
+          <pre><code>const MAJOR = [0, 2, 4, 5, 7, 9, 11];
+const NATURAL_MINOR = [0, 2, 3, 5, 7, 8, 10];
+const PHRYGIAN = [0, 1, 3, 5, 7, 8, 10];
+
+const MODE_PROFILES: Record&lt;MusicMode, ModeProfile&gt; = {
+  soft: {
+    bpm: 64,
+    scaleSemitones: MAJOR,
+    degreeWeights: SOFT_DEGREE_WEIGHTS,
+    octaveWeights: MAJOR_OCTAVE_WEIGHTS,
+    baseMidi: 56,
+  },
+  crisp: {
+    bpm: 133,
+    scaleSemitones: NATURAL_MINOR,
+    degreeWeights: CRISP_DEGREE_WEIGHTS,
+    octaveWeights: NATURAL_MINOR_OCTAVE_WEIGHTS,
+    baseMidi: 82,
+  },
+  manic: {
+    bpm: 101,
+    scaleSemitones: PHRYGIAN,
+    degreeWeights: MANIC_DEGREE_WEIGHTS,
+    octaveWeights: PHRYGIAN_OCTAVE_WEIGHTS,
+    baseMidi: 64,
+  },
+};</code></pre>
+          <div class="note">This is the scale layer: each mode chooses a pitch set before any weighting or octave drift is applied.</div>
+        </article>
+
+        <article class="card">
+          <h2>Weighted Scales</h2>
+          <p>
+            Scale degrees are not chosen uniformly. A weighted picker biases note selection so each music mode produces a
+            distinct melodic personality.
+          </p>
+          <pre><code>const SOFT_DEGREE_WEIGHTS = [0.30, 0.12, 0.20, 0.08, 0.18, 0.08, 0.04];
+const CRISP_DEGREE_WEIGHTS = [0.28, 0.10, 0.22, 0.10, 0.18, 0.05, 0.07];
+const MANIC_DEGREE_WEIGHTS = [0.32, 0.03, 0.23, 0.12, 0.18, 0.07, 0.05];
+
+function weightedIndex(weights: number[]) {
+  const total = weights.reduce((sum, weight) =&gt; sum + Math.max(0, weight), 0);
+  if (total &lt;= 0) return 0;
+
+  let pick = Math.random() * total;
+  for (let i = 0; i &lt; weights.length; i++) {
+    pick -= Math.max(0, weights[i]);
+    if (pick &lt;= 0) return i;
+  }
+
+  return weights.length - 1;
+}
+
+const degreeIndex = weightedIndex(profile.degreeWeights);
+const semitone = profile.scaleSemitones[degreeIndex] ?? 0;</code></pre>
+          <div class="note">This is the weighted-scale layer: the engine picks a degree first, then resolves that degree inside the active scale.</div>
+        </article>
+
+        <article class="card">
+          <h2>Octaves</h2>
+          <p>
+            After the scale degree is chosen, the note is moved across weighted octave offsets. That keeps the harmony
+            mode-specific while still giving the output vertical range.
+          </p>
+          <pre><code>const OCTAVE_OFFSETS = [-24, -12, 0, 12, 24];
+const MAJOR_OCTAVE_WEIGHTS = [0.15, 0.05, 0.55, 0.15, 0.05];
+const NATURAL_MINOR_OCTAVE_WEIGHTS = [0.2, 0.1, 0.5, 0.3, 0.05];
+const PHRYGIAN_OCTAVE_WEIGHTS = [0.16, 0.26, 0.36, 0.14, 0.08];
+
+function weightedValue(values: number[], weights: number[]) {
+  const idx = weightedIndex(weights);
+  return values[Math.min(values.length - 1, Math.max(0, idx))] ?? values[0] ?? 0;
+}
+
+const octaveDrift = weightedValue(OCTAVE_OFFSETS, profile.octaveWeights);
+const midi = profile.baseMidi + semitone + octaveDrift;
+const freq = midiToHz(midi);</code></pre>
+          <div class="note">This is the octave layer: pitch height is selected after the scale degree, then converted from MIDI to frequency.</div>
+        </article>
+      </section>
+    </main>
+  </body>
+</html>
