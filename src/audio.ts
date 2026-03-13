@@ -10,6 +10,7 @@ type ModeProfile = {
   bpm: number;
   scaleSemitones: number[];
   degreeWeights: number[];
+  octaveWeights: number[];
   baseMidi: number;
   attackSec: number;
   decaySecMin: number;
@@ -50,15 +51,20 @@ type ModeProfile = {
 const MAJOR = [0, 2, 4, 5, 7, 9, 11];
 const NATURAL_MINOR = [0, 2, 3, 5, 7, 8, 10];
 const PHRYGIAN = [0, 1, 3, 5, 7, 8, 10];
-const SOFT_DEGREE_WEIGHTS = [0.34, 0.05, 0.2, 0.12, 0.22, 0.05, 0.02];
-const CRISP_DEGREE_WEIGHTS = [0.34, 0.05, 0.2, 0.12, 0.22, 0.05, 0.02];
-const MANIC_DEGREE_WEIGHTS = [0.3, 0.08, 0.22, 0.1, 0.2, 0.06, 0.04];
+const OCTAVE_OFFSETS = [-24, -12, 0, 12, 24];
+const SOFT_DEGREE_WEIGHTS = [0.30, 0.12, 0.20, 0.08, 0.18, 0.08, 0.04];
+const CRISP_DEGREE_WEIGHTS = [0.28, 0.10, 0.22, 0.10, 0.18, 0.05, 0.07];
+const MANIC_DEGREE_WEIGHTS = [0.32, 0.03, 0.23, 0.12, 0.18, 0.07, 0.05];
+const MAJOR_OCTAVE_WEIGHTS = [0.15, 0.05, 0.55, 0.15, 0.05];
+const NATURAL_MINOR_OCTAVE_WEIGHTS = [0.2, 0.1, 0.5, 0.3, 0.05];
+const PHRYGIAN_OCTAVE_WEIGHTS = [0.16, 0.26, 0.36, 0.14, 0.08];
 
 const MODE_PROFILES: Record<MusicMode, ModeProfile> = {
   soft: {
     bpm: 64,
     scaleSemitones: MAJOR,
     degreeWeights: SOFT_DEGREE_WEIGHTS,
+    octaveWeights: MAJOR_OCTAVE_WEIGHTS,
     baseMidi: 56,
     attackSec: 0.4,
     decaySecMin: 0.45,
@@ -99,6 +105,7 @@ const MODE_PROFILES: Record<MusicMode, ModeProfile> = {
     bpm: 133,
     scaleSemitones: NATURAL_MINOR,
     degreeWeights: CRISP_DEGREE_WEIGHTS,
+    octaveWeights: NATURAL_MINOR_OCTAVE_WEIGHTS,
     baseMidi: 82,
     attackSec: 0.001,
     decaySecMin: 0.25,
@@ -139,6 +146,7 @@ const MODE_PROFILES: Record<MusicMode, ModeProfile> = {
     bpm: 101,
     scaleSemitones: PHRYGIAN,
     degreeWeights: MANIC_DEGREE_WEIGHTS,
+    octaveWeights: PHRYGIAN_OCTAVE_WEIGHTS,
     baseMidi: 64,
     attackSec: 0.004,
     decaySecMin: 2,
@@ -420,10 +428,7 @@ export class MusicEngine {
 
     const degreeIndex = weightedIndex(profile.degreeWeights);
     const semitone = profile.scaleSemitones[degreeIndex] ?? 0;
-    const octaveDrift = weightedValue(
-      [-12, -7, -5, 0, 5, 7, 12],
-      [0.08, 0.12, 0.16, 0.28, 0.16, 0.12, 0.08]
-    );
+    const octaveDrift = weightedValue(OCTAVE_OFFSETS, profile.octaveWeights);
 
     const midi = profile.baseMidi + semitone + octaveDrift;
     const freq = midiToHz(midi);
